@@ -1,0 +1,8 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="SX4Monitor:jar">
+    <output-path>$PROJECT_DIR$/out/artifacts/SX4Monitor_jar</output-path>
+    <root id="archive" name="SX4Monitor.jar">
+      <element id="module-output" name="SX4Monitor" />
+    </root>
+  </artifact>
+</component>

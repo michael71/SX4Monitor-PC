@@ -1,0 +1,28 @@
+# NetBeans specific #
+nbproject/private/
+dist/
+build/
+nbbuild/
+nbdist/
+nbactions.xml
+nb-configuration.xml
+manifest.mf
+paneldesc.xml
+build.xml
+.project
+manifest.mf
+paneldesc.xml
+build.xml
+.project
+.classpath
+nbproject
+
+archiv/
+*.backup
+
+# Class Files #
+*.class
+
+# Package Files #
+*.war
+*.ear
