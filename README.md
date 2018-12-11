@@ -9,8 +9,10 @@ Das Programm entstand aus dem Wunsch heraus, einen Selectrix-"Monitor" auch unte
 
 Zur Anzeige im Monitor wird die übliche SX-Darstellung gewählt mit Bit 1 bis Bit 8, wobei das niederwertige zuerst gezeigt wird.
 
+![SX4Monitor-PC] (https://raw.githubusercontent.com/michael71/SX4Monitor-PC/master/sx4monitor-pc.png)
+
 
 
 ## Licence
-GPL v3.0
+GPL v3.0, see LICENSE file.
 
