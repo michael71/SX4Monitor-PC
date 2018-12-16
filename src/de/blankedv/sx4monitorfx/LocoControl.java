@@ -230,7 +230,7 @@ public class LocoControl extends Control implements MouseWheelListener {
     }
 
     private void sendLocoData() {
-        if ((data == lastData) && ((System.currentTimeMillis() - lastLocoDataSent) < 1000)) {
+        if ((locoData == lastData) && ((System.currentTimeMillis() - lastLocoDataSent) < 1000)) {
             // don't send identical speed twice (within a second interval)
             return;
         }
@@ -239,6 +239,7 @@ public class LocoControl extends Control implements MouseWheelListener {
         client.send("S " + address + " " + locoData);
         lastData = locoData;
         lastLocoDataSent = System.currentTimeMillis();
+        SX4Monitor.update(address, locoData);  // sxData[] get updated in SX4Monitor
     }
 
     private void toggleBit(int bitmask) {  // sx bit

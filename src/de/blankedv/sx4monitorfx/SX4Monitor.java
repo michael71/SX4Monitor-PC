@@ -73,7 +73,7 @@ public class SX4Monitor extends Application {
     @Override
     public void start(Stage theStage) throws InterruptedException {
 
-        final String version = "v0.23 - 10 Dec 2018";
+        final String version = "v0.3 - 13 Dec 2018";
         theStage.setTitle("SX4 Monitor");
 
         final Parameters params = getParameters();
@@ -126,7 +126,7 @@ public class SX4Monitor extends Application {
             } else {
                 client.send("SETPOWER 1");
                 globalPower.set(true);
-            }
+            } 
             event.consume();
         });
 

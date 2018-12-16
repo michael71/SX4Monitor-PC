@@ -17,6 +17,8 @@ import java.net.InetSocketAddress;
 import java.net.Socket;
 import java.net.SocketAddress;
 import java.util.List;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javafx.application.Platform;
 import javafx.beans.property.SimpleStringProperty;
 
@@ -69,6 +71,7 @@ public class SXnetClientThread extends Thread {
         shutdownFlag = false;
         clientTerminated = false;
         connect();
+        //this.setPriority(3);  effect of this is not clear ... at least no effect on CPU utilization
 
         while ((shutdownFlag == false) && (!Thread.currentThread().isInterrupted())) {
             try {
@@ -80,8 +83,11 @@ public class SXnetClientThread extends Thread {
                     handleMsgFromServer(in1.toUpperCase());
                     timeOfLastMsgReceived = System.currentTimeMillis();
                 }
+                Thread.sleep(20);  // without a short sleep here, CPU utilization is always 100%
             } catch (IOException e) {
                 System.out.println("INVALID_INT: reading from socket - " + e.getMessage());
+            } catch (InterruptedException ex) {
+                System.out.println("Interrupted IO exception " + ex.getMessage());
             }
 
         }
@@ -142,7 +148,7 @@ public class SXnetClientThread extends Thread {
 
     }
 
-    public synchronized void send(String command) {
+    public void send(String command) {
         if (shutdownFlag || clientTerminated) {
             return;
         }
@@ -157,7 +163,7 @@ public class SXnetClientThread extends Thread {
                 if (DEBUG) {
                     System.out.println("sent: " + command);
                 }
-                handleMsgFromServer(command);   // ==> local echo
+                // handleMsgFromServer(command);   // ==> local echo
             } catch (Exception e) {
                 if (DEBUG) {
                     System.out.println("could not send: " + command);
@@ -203,7 +209,6 @@ public class SXnetClientThread extends Thread {
                         }
                         break;
                     case "XPOWER":
-                    case "SETPOWER":  // local echo
                         if (info.length >= 2) {
                             data = getChannelFromString(info[1]);
                             if (data != INVALID_INT) {

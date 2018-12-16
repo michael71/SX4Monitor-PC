@@ -146,6 +146,7 @@ public class AccessoryControl extends Control {
         }
         // sxData[address] = data;  =is redundant
         client.send("S " + address + " " + data);
+        SX4Monitor.update(address, data);  // sxData[] get updated in SX4Monitor
     }
 
 }
