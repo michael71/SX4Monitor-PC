@@ -18,7 +18,6 @@ package de.blankedv.sx4monitorfx;
 
 
 import static de.blankedv.sx4monitorfx.SXnetClientThread.SXMAX;
-import javafx.scene.control.Alert;
 
 /**
  *
@@ -28,20 +27,6 @@ public class Utils {
     // return the right List for the lanbahn address
 
 
-    public static void showInfoAlert(String title, String header, String msg) {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setContentText(msg);
-        alert.setTitle(title);
-        alert.setHeaderText(header);
-        alert.showingProperty().addListener((observable, oldValue, newValue) -> {
-            if (!newValue) {
-                return;
-            }
-        });
-        alert.show();  // sofort anzeigen
-    }
-
-    
 
     public static boolean isValidSXAddress(int a) {
         return ((a >= 0) && (a <= SXMAX));

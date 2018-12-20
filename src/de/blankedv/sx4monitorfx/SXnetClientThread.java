@@ -16,6 +16,7 @@ import java.net.InetSocketAddress;
 
 import java.net.Socket;
 import java.net.SocketAddress;
+import java.net.UnknownHostException;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -52,6 +53,8 @@ public class SXnetClientThread extends Thread {
     private PrintWriter out = null;
     private BufferedReader in = null;
 
+    
+    
     public SXnetClientThread() {
 
         clientTerminated = false;
@@ -64,6 +67,16 @@ public class SXnetClientThread extends Thread {
         } else {
             System.out.println("no network adapter, cannot listen to sxnet messages.");
         }
+    }
+    
+    public SXnetClientThread(InetAddress ipaddr) {
+        ip = ipaddr;
+        clientTerminated = false;
+
+    }
+    
+    public void shutdown() {
+        shutdownFlag = true;
     }
 
     public void run() {

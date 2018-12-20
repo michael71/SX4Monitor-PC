@@ -5,6 +5,8 @@
  */
 package de.blankedv.sx4monitorfx;
 
+import com.sun.deploy.uitoolkit.impl.fx.HostServicesFactory;
+import com.sun.javafx.application.HostServicesDelegate;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.beans.value.ObservableValue;
@@ -27,9 +29,14 @@ import javafx.scene.layout.ColumnConstraints;
 import javafx.scene.layout.GridPane;
 
 import static de.blankedv.sx4monitorfx.SXnetClientThread.*;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Optional;
+import java.util.function.Consumer;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.beans.property.BooleanProperty;
@@ -39,7 +46,9 @@ import javafx.collections.ObservableList;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.Button;
+import javafx.scene.control.ButtonType;
 import javafx.scene.control.ChoiceDialog;
+import javafx.scene.control.TextInputDialog;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
@@ -73,7 +82,7 @@ public class SX4Monitor extends Application {
     @Override
     public void start(Stage theStage) throws InterruptedException {
 
-        final String version = "v0.3 - 13 Dec 2018";
+        final String version = "v0.31 - 20 Dec 2018";
         theStage.setTitle("SX4 Monitor");
 
         final Parameters params = getParameters();
@@ -83,6 +92,7 @@ public class SX4Monitor extends Application {
         Image green = new Image("/de/blankedv/sx4monitorfx/res/greendot.png");
         Image red = new Image("/de/blankedv/sx4monitorfx/res/reddot.png");
         ImageView ivInfo = new ImageView(new Image("/de/blankedv/sx4monitorfx/res/info.png"));
+        ImageView ivSettings = new ImageView(new Image("/de/blankedv/sx4monitorfx/res/settings.png"));
 
         ImageView ivPowerState = new ImageView();
         globalPower.set(false);
@@ -96,8 +106,6 @@ public class SX4Monitor extends Application {
         for (String s : parameters) {
             System.out.println("param: " + s);
         }
-
-
 
         theStage.setOnCloseRequest((WindowEvent e) -> {
             // needed for stopping lanbahn thread.
@@ -126,7 +134,7 @@ public class SX4Monitor extends Application {
             } else {
                 client.send("SETPOWER 1");
                 globalPower.set(true);
-            } 
+            }
             event.consume();
         });
 
@@ -183,7 +191,39 @@ public class SX4Monitor extends Application {
 
         optionsPane.add(ivInfo, 6, 0);
         ivInfo.addEventHandler(MouseEvent.MOUSE_CLICKED, event -> {
-            Utils.showInfoAlert("Info", "SX4Monitor\nhttps://opensx.net/sx4 ", "Programm version:" + version);
+            showInfoAlert("Info", "SX4Monitor\nhttps://opensx.net/sx4 ", "Programm version:" + version);
+            event.consume();
+        });
+        optionsPane.add(ivSettings, 5, 0);
+        ivSettings.addEventHandler(MouseEvent.MOUSE_CLICKED, event -> {
+            TextInputDialog dialog = new TextInputDialog("192.168.178.xx");
+
+            dialog.setTitle("Server Adresse");
+            dialog.setHeaderText(null);
+            dialog.setContentText("IP=");
+
+            Optional<String> result = dialog.showAndWait();
+
+            result.ifPresent((String name) -> {
+                InetAddress ip;
+                try {
+                    ip = InetAddress.getByName(name);
+                    System.out.println("new ip selected = " + name);
+                    if (client != null) {
+                        client.shutdown();
+                    }
+                    try {
+                        Thread.sleep(100);
+                        client = new SXnetClientThread(ip);
+                        client.start();
+                    } catch (InterruptedException ex) {
+                        System.out.println("kann Client nicht starten");
+                    }
+                    
+                } catch (UnknownHostException ex) {
+                    System.out.println("ungültiger Host");
+                }
+            });
             event.consume();
         });
 
@@ -276,6 +316,26 @@ public class SX4Monitor extends Application {
         launch(args);
     }
 
+    public void showInfoAlert(String title, String header, String msg) {
+        Alert alert = new Alert(Alert.AlertType.INFORMATION);
+        alert.setContentText(msg);
+        alert.setTitle(title);
+        alert.setHeaderText(header);
+
+        ButtonType openOpensx = new ButtonType("-> opensx.net/sx4");
+        alert.getButtonTypes().addAll(openOpensx);
+        Optional<ButtonType> option = alert.showAndWait();
+
+        if (option.get() == openOpensx) {
+            try {
+                HostServicesDelegate hostServices = HostServicesFactory.getInstance(this);
+                getHostServices().showDocument("https://opensx.net/sx4");
+            } catch (Exception e) {
+                ;  // do nothing
+            }
+        }
+    }
+
     public static void locoControlClosing(LocoControl lc) {
         allLocoControls.remove(lc);
         // enable acc-controls with this address (if any)
@@ -289,7 +349,6 @@ public class SX4Monitor extends Application {
     public static void accessoryControlClosing(AccessoryControl ac) {
         allAccessoryControls.remove(ac);
     }
-
 
     public static void updatePower(int data) {
         if (data == 0) {
@@ -307,7 +366,7 @@ public class SX4Monitor extends Application {
         Platform.runLater(() -> {
             allLocoControls.stream().filter((lc) -> (lc.getAddress() == addr)).forEachOrdered((lc) -> {
                 lc.updateUI();  // TODO data value ignored currently
-             });
+            });
             allAccessoryControls.stream().filter((ac) -> (ac.getAddress() == addr)).forEachOrdered((ac) -> {
                 ac.updateUI();
             });
@@ -334,8 +393,10 @@ public class SX4Monitor extends Application {
     }
 
     public static boolean isLocoControlAddress(int a) {
-        for (LocoControl lc: allLocoControls) {
-            if (lc.address == a) return true;
+        for (LocoControl lc : allLocoControls) {
+            if (lc.address == a) {
+                return true;
+            }
         }
         return false;
     }
@@ -351,7 +412,6 @@ public class SX4Monitor extends Application {
         }
         return null;
     }
-
 
     private void setColumnConstraints(GridPane gp) {
         gp.setHgap(5);
