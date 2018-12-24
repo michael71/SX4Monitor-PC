@@ -29,11 +29,18 @@ public class SXValue implements Comparator<SXValue>, Comparable<SXValue> {
     String bits;
     long tStamp;
     
-    SXValue(int c, int d) {
+    SXValue(int c, int d, boolean markNew) {
         channel = c;
         data = d;
-        dataToBits();
-        tStamp = System.currentTimeMillis();
+        dataToBits(markNew);
+        tStamp=System.currentTimeMillis();
+    }
+    
+    SXValue(SXValue sxv) {
+        channel = sxv.getChannel();
+        data = sxv.getData();
+        bits = ' ' + sxv.bits.substring(1);
+        tStamp=0;
     }
 
     public int getChannel() {
@@ -50,19 +57,24 @@ public class SXValue implements Comparator<SXValue>, Comparable<SXValue> {
 
     public void setData(int data) {
         this.data = data;
-        dataToBits();
+        dataToBits(false);
     }
     
     public String getBits() {
-        return bits;
+            return bits;
     }
 
     public void setBits(String bits) {
         this.bits = bits;
     }
 
-    private void dataToBits() {
-        StringBuffer sb = new StringBuffer();
+    private void dataToBits(boolean markNew) {
+        StringBuilder sb = new StringBuilder();
+        if (markNew) {
+            sb.append('*');
+        } else {
+            sb.append(' ');
+        }
         for (int i= 0; i <8 ;i++) {
             if ((data & (1 << i)) != 0) {
                 sb.append('1');
@@ -73,7 +85,22 @@ public class SXValue implements Comparator<SXValue>, Comparable<SXValue> {
         bits = sb.toString();
     }
 
+    public boolean isNew() {
+        return (bits.charAt(0) == '*');
+    }
 
+    public void setOld() {
+        bits = ' ' + bits.substring(1);
+    }
+
+    public long gettStamp() {
+        return tStamp;
+    }
+
+    public void settStamp(long tStamp) {
+        this.tStamp = tStamp;
+    }
+    
     @Override
     public int compare(SXValue o1, SXValue o2) {
             if (o1.getChannel() < o2.getChannel()) {

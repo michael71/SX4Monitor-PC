@@ -48,10 +48,12 @@ import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ChoiceDialog;
+import javafx.scene.control.TableCell;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.paint.Color;
 import javafx.util.Duration;
 
 /**
@@ -82,7 +84,7 @@ public class SX4Monitor extends Application {
     @Override
     public void start(Stage theStage) throws InterruptedException {
 
-        final String version = "v0.31 - 20 Dec 2018";
+        final String version = "v0.32 - 24 Dec 2018";
         theStage.setTitle("SX4 Monitor");
 
         final Parameters params = getParameters();
@@ -165,7 +167,7 @@ public class SX4Monitor extends Application {
                 if (!channelsOfInterest.contains(addr)) {
                     channelsOfInterest.add(addr);
                     // if this channel was not used before, its data must be ==0
-                    (getSXDataList(addr)).add(new SXValue(addr, 0));
+                    (getSXDataList(addr)).add(new SXValue(addr, 0, true));
                     client.send("R " + addr); // just to be sure ...
                 }
             });
@@ -253,6 +255,30 @@ public class SX4Monitor extends Application {
             chanCol.setCellValueFactory(new PropertyValueFactory<>("channel"));
             dataCol.setCellValueFactory(new PropertyValueFactory<>("data"));
             bitsCol.setCellValueFactory(new PropertyValueFactory<>("bits"));
+            // Custom rendering of the table cell.
+            bitsCol.setCellFactory(column -> {
+                return new TableCell<SXValue, String>() {
+                    @Override
+                    protected void updateItem(String item, boolean empty) {
+                        super.updateItem(item, empty);
+
+                        if (item == null || empty) {
+                            setText(null);
+                            setStyle("");
+                        } else {
+                            // Format date.
+                            setText(item);
+                            if (item.charAt(0) == '*') {
+                                setTextFill(Color.CHOCOLATE);
+                                setStyle("-fx-background-color: yellow; -fx-alignment: CENTER;");
+                            } else {
+                                setTextFill(Color.BLACK);
+                                setStyle(" -fx-alignment: CENTER;");
+                            }
+                        }
+                    }
+                };
+            });
         }
 
         tableViewLBData[0].setItems(new SortedList<>(col1Data.sorted()));
@@ -297,16 +323,20 @@ public class SX4Monitor extends Application {
             // check connection every few seconds 
             alert.setTitle("Fehler: Verbindung verloren!");
             alert.setHeaderText("keine Verbindung mehr zu SX4...");
-            Timeline threeSeconds = new Timeline(new KeyFrame(Duration.seconds(3), (ActionEvent event) -> {
+            Timeline twoSeconds = new Timeline(new KeyFrame(Duration.seconds(2), (ActionEvent event) -> {
+
                 // check if connection is still alive
                 // this is run on UI Thread (in contrast to "the good old java Timer" ...)
                 if ((System.currentTimeMillis() - timeOfLastMsgReceived) > 10 * 1000) {
                     alert.show();
                 }
+                doOldDataCheck(col1Data);
+                doOldDataCheck(col2Data);
+                doOldDataCheck(col3Data);
             }));
-            threeSeconds.setCycleCount(Timeline.INDEFINITE);
-            threeSeconds.play();
-        }
+            twoSeconds.setCycleCount(Timeline.INDEFINITE);
+            twoSeconds.play();
+        }  
     }
 
     /**
@@ -335,6 +365,23 @@ public class SX4Monitor extends Application {
             }
         }
     }
+
+public void doOldDataCheck(ObservableList<SXValue> colD) {
+        ArrayList<SXValue> sxvOld = new ArrayList<>();
+        for (SXValue sxv : colD) {
+            if (sxv.isNew()) {
+                if ((System.currentTimeMillis() - sxv.gettStamp()) > 5000) {
+                    sxvOld.add(sxv);
+                }
+            }
+        }
+        //System.out.println("sxvOld.size()=" + sxvOld.size());
+        for (SXValue s : sxvOld) {
+            colD.remove(s);
+            colD.add(new SXValue(s));
+        }
+    }
+
 
     public static void locoControlClosing(LocoControl lc) {
         allLocoControls.remove(lc);
@@ -385,7 +432,7 @@ public class SX4Monitor extends Application {
         // ! update of the data only does not trigger "change" of
         // ObservableList lanbahnData !
         if ((data != 0) || channelsOfInterest.contains(addr)) {
-            getSXDataList(addr).add(new SXValue(addr, data));
+            getSXDataList(addr).add(new SXValue(addr, data, true));
             if (!channelsOfInterest.contains(addr)) {
                 channelsOfInterest.add(addr);
             }

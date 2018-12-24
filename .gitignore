@@ -1,6 +1,6 @@
 # NetBeans specific #
 nbproject/private/
-dist/
+dist/run*
 build/
 nbbuild/
 nbdist/

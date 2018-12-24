@@ -83,24 +83,30 @@ public class SXnetClientThread extends Thread {
 
         shutdownFlag = false;
         clientTerminated = false;
+        //Thread.currentThread().setPriority(1);  no effect
         connect();
-        //this.setPriority(3);  effect of this is not clear ... at least no effect on CPU utilization
-
+  
         while ((shutdownFlag == false) && (!Thread.currentThread().isInterrupted())) {
             try {
-                if ((in != null) && (in.ready())) {
+                while ((in != null) && (in.ready())) {
                     String in1 = in.readLine();
                     if (DEBUG) {
                         System.out.println("msgFromServer: " + in1);
                     }
                     handleMsgFromServer(in1.toUpperCase());
                     timeOfLastMsgReceived = System.currentTimeMillis();
+                    
                 }
                 Thread.sleep(20);  // without a short sleep here, CPU utilization is always 100%
             } catch (IOException e) {
                 System.out.println("INVALID_INT: reading from socket - " + e.getMessage());
+            } catch (InterruptedException ex) { 
+                Logger.getLogger(SXnetClientThread.class.getName()).log(Level.SEVERE, null, ex);
+            }
+            try {
+                Thread.sleep(50);  // reduce CPU utilization
             } catch (InterruptedException ex) {
-                System.out.println("Interrupted IO exception " + ex.getMessage());
+                System.out.println(ex.getMessage());
             }
 
         }
