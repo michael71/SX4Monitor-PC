@@ -49,11 +49,13 @@ import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.TableCell;
+import javafx.scene.control.TableRow;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.paint.Color;
+import javafx.util.Callback;
 import javafx.util.Duration;
 
 /**
@@ -63,6 +65,7 @@ import javafx.util.Duration;
 public class SX4Monitor extends Application {
 
     public static final int INVALID_INT = -1;
+    public static final int NEW_TIME_SEC = 5;  //how many seconds a new value is considered "new"
 
     public static SXnetClientThread client;
     public static BooleanProperty globalPower = new SimpleBooleanProperty(false);
@@ -221,7 +224,7 @@ public class SX4Monitor extends Application {
                     } catch (InterruptedException ex) {
                         System.out.println("kann Client nicht starten");
                     }
-                    
+
                 } catch (UnknownHostException ex) {
                     System.out.println("ungültiger Host");
                 }
@@ -252,10 +255,31 @@ public class SX4Monitor extends Application {
             bitsCol.setStyle("-fx-alignment: CENTER;");
 
             tableViewLBData[i].setCenterShape(true);
+            tableViewLBData[i].setRowFactory(new Callback<TableView<SXValue>, TableRow<SXValue>>() {
+                @Override
+                public TableRow<SXValue> call(TableView<SXValue> tableView) {
+                    final TableRow<SXValue> row = new TableRow<SXValue>() {
+                        @Override
+                        protected void updateItem(SXValue sxv, boolean empty) {
+                            super.updateItem(sxv, empty);
+                            if (!empty) {
+                                if (sxv.isMarked()) {
+                                    setStyle("-fx-background-color: yellow;");
+                                } else {
+                                    setStyle("");
+                                }
+                            }
+                        }
+                    };
+                    return row;
+                }
+            });
+
             chanCol.setCellValueFactory(new PropertyValueFactory<>("channel"));
             dataCol.setCellValueFactory(new PropertyValueFactory<>("data"));
             bitsCol.setCellValueFactory(new PropertyValueFactory<>("bits"));
             // Custom rendering of the table cell.
+            /* no longer used
             bitsCol.setCellFactory(column -> {
                 return new TableCell<SXValue, String>() {
                     @Override
@@ -278,7 +302,7 @@ public class SX4Monitor extends Application {
                         }
                     }
                 };
-            });
+            });  */
         }
 
         tableViewLBData[0].setItems(new SortedList<>(col1Data.sorted()));
@@ -336,7 +360,7 @@ public class SX4Monitor extends Application {
             }));
             twoSeconds.setCycleCount(Timeline.INDEFINITE);
             twoSeconds.play();
-        }  
+        }
     }
 
     /**
@@ -366,10 +390,10 @@ public class SX4Monitor extends Application {
         }
     }
 
-public void doOldDataCheck(ObservableList<SXValue> colD) {
+    public void doOldDataCheck(ObservableList<SXValue> colD) {
         ArrayList<SXValue> sxvOld = new ArrayList<>();
         for (SXValue sxv : colD) {
-            if (sxv.isNew()) {
+            if (sxv.isMarked()) {
                 if ((System.currentTimeMillis() - sxv.gettStamp()) > 5000) {
                     sxvOld.add(sxv);
                 }
@@ -378,10 +402,10 @@ public void doOldDataCheck(ObservableList<SXValue> colD) {
         //System.out.println("sxvOld.size()=" + sxvOld.size());
         for (SXValue s : sxvOld) {
             colD.remove(s);
+            s.setMarked(false);
             colD.add(new SXValue(s));
         }
     }
-
 
     public static void locoControlClosing(LocoControl lc) {
         allLocoControls.remove(lc);

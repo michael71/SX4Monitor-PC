@@ -16,6 +16,7 @@
  */
 package de.blankedv.sx4monitorfx;
 
+import static de.blankedv.sx4monitorfx.SX4Monitor.NEW_TIME_SEC;
 import java.util.Comparator;
 
 
@@ -26,23 +27,36 @@ import java.util.Comparator;
 public class SXValue implements Comparator<SXValue>, Comparable<SXValue> {
     int channel;
     int data;
+
+  
     String bits;
     long tStamp;
+    boolean marked;
     
     SXValue(int c, int d, boolean markNew) {
         channel = c;
         data = d;
-        dataToBits(markNew);
+        dataToBits();
         tStamp=System.currentTimeMillis();
+        marked = markNew;
     }
     
     SXValue(SXValue sxv) {
         channel = sxv.getChannel();
         data = sxv.getData();
-        bits = ' ' + sxv.bits.substring(1);
+        dataToBits();
         tStamp=0;
+        marked=false;
     }
 
+      public boolean isMarked() {
+        return marked;
+    }
+
+    public void setMarked(boolean marked) {
+        this.marked = marked;
+    }
+    
     public int getChannel() {
         return channel;
     }
@@ -57,7 +71,7 @@ public class SXValue implements Comparator<SXValue>, Comparable<SXValue> {
 
     public void setData(int data) {
         this.data = data;
-        dataToBits(false);
+        dataToBits();
     }
     
     public String getBits() {
@@ -68,13 +82,8 @@ public class SXValue implements Comparator<SXValue>, Comparable<SXValue> {
         this.bits = bits;
     }
 
-    private void dataToBits(boolean markNew) {
+    private void dataToBits() {
         StringBuilder sb = new StringBuilder();
-        if (markNew) {
-            sb.append('*');
-        } else {
-            sb.append(' ');
-        }
         for (int i= 0; i <8 ;i++) {
             if ((data & (1 << i)) != 0) {
                 sb.append('1');
@@ -83,14 +92,6 @@ public class SXValue implements Comparator<SXValue>, Comparable<SXValue> {
             }
         }
         bits = sb.toString();
-    }
-
-    public boolean isNew() {
-        return (bits.charAt(0) == '*');
-    }
-
-    public void setOld() {
-        bits = ' ' + bits.substring(1);
     }
 
     public long gettStamp() {
