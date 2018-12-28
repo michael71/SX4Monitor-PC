@@ -52,22 +52,7 @@ public class SXnetClientThread extends Thread {
     private PrintWriter out = null;
     private BufferedReader in = null;
 
-    
-    
-    public SXnetClientThread() {
-
-        clientTerminated = false;
-
-        List<InetAddress> myip = NIC.getmyip();
-        // loadPrefs();
-
-        if (!myip.isEmpty()) {
-            ip = myip.get(0);
-        } else {
-            System.out.println("no network adapter, cannot listen to sxnet messages.");
-        }
-    }
-    
+      
     public SXnetClientThread(InetAddress ipaddr) {
         ip = ipaddr;
         clientTerminated = false;
@@ -152,7 +137,7 @@ public class SXnetClientThread extends Thread {
             Platform.runLater(new Runnable() {
                 @Override
                 public void run() {
-                    connString.set(e.getMessage());
+                    connString.set(e.getMessage()+ " - ip="+ip.getHostAddress());
                 }
             });
             shutdownFlag = true; // terminate this thread and show alert window

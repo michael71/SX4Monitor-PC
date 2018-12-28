@@ -25,8 +25,6 @@ import java.util.List;
 import javafx.collections.transformation.SortedList;
 import javafx.geometry.Insets;
 import javafx.scene.control.cell.PropertyValueFactory;
-import javafx.scene.layout.ColumnConstraints;
-import javafx.scene.layout.GridPane;
 
 import static de.blankedv.sx4monitorfx.SXnetClientThread.*;
 import java.net.InetAddress;
@@ -34,6 +32,8 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Optional;
+import java.util.logging.Level;
+import java.util.logging.Logger;
 import java.util.prefs.Preferences;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
@@ -45,11 +45,15 @@ import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
+import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuBar;
 import javafx.scene.control.MenuItem;
+import javafx.scene.control.RadioMenuItem;
 import javafx.scene.control.TableRow;
+import javafx.scene.control.TextInputDialog;
+import javafx.scene.control.ToggleGroup;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
@@ -70,6 +74,7 @@ public class SX4Monitor extends Application {
     public static SXnetClientThread client;
     public static BooleanProperty globalPower = new SimpleBooleanProperty(false);
     public static final int[] sxData = new int[SXMAX + 1];
+    public static String hostAddress;
 
     private static final ArrayList<LocoControl> allLocoControls = new ArrayList<>();
     private static int currentLocoControlID = 0;
@@ -84,7 +89,10 @@ public class SX4Monitor extends Application {
 
     private final TableView[] tableViewLBData = {new TableView(), new TableView(), new TableView()};
 
+    private MenuItem settingsItem;
+
     final String version = "v0.33 - 28 Dec 2018";
+    final String DEFAULT_SERVER = "192.168.178.xx";
 
     @Override
     public void start(Stage theStage) throws InterruptedException {
@@ -147,8 +155,7 @@ public class SX4Monitor extends Application {
 
         theStage.show();
 
-        client = new SXnetClientThread();
-        client.start();
+        openServer(prefs);
 
         // prepare Alert for Program termination in case of loss of connection
         Alert alert = new Alert(AlertType.ERROR);
@@ -206,7 +213,7 @@ public class SX4Monitor extends Application {
                 HostServicesDelegate hostServices = HostServicesFactory.getInstance(this);
                 getHostServices().showDocument("https://opensx.net/sx4");
             } catch (Exception e) {
-                ;  // do nothing
+                System.out.println(e.getMessage());
             }
         }
     }
@@ -325,22 +332,65 @@ public class SX4Monitor extends Application {
     }
 
     private void createMenu(Preferences prefs, MenuBar menuBar) {
-        final ImageView ivSettings = new ImageView(new Image("/de/blankedv/sx4monitorfx/res/settings.png"));
+        // final ImageView ivSettings = new ImageView(new Image("/de/blankedv/sx4monitorfx/res/settings.png"));
         final ImageView ivInfo = new ImageView(new Image("/de/blankedv/sx4monitorfx/res/info.png"));
         final Menu menu1 = new Menu("File");
-        final Menu menu2 = new Menu("Options");
+        final Menu menuOptions = new Menu("Options");
         final Menu menuInfo = new Menu("Help");
         final MenuItem exitItem = new MenuItem("Exit");
         menu1.getItems().add(exitItem);
         exitItem.setOnAction((event) -> {
             System.exit(0);
         });
-        final MenuItem settingsItem = new MenuItem("Settings");
-        menu2.getItems().add(settingsItem);
-        settingsItem.setGraphic(ivSettings);
+        settingsItem = new MenuItem(hostAddress);
+
+        //settingsItem.setGraphic(ivSettings);
         settingsItem.setOnAction((event) -> {
-            Settings.startSett(prefs);
+            selectServerIP(prefs, hostAddress);
         });
+        RadioMenuItem localServer = new RadioMenuItem("Local Server");
+        RadioMenuItem remoteServer = new RadioMenuItem("Remote Server");
+        ToggleGroup group = new ToggleGroup();
+        localServer.setToggleGroup(group);
+        remoteServer.setToggleGroup(group);
+        if (prefs.getBoolean("localServer", true)) {
+            localServer.setSelected(true);
+            remoteServer.setSelected(false);
+            settingsItem.setDisable(true);
+        } else {
+            localServer.setSelected(false);
+            remoteServer.setSelected(true);
+            settingsItem.setDisable(false);
+        }
+        localServer.setOnAction(e
+                -> {
+            if (localServer.isSelected()) {
+                System.out.println("ls: local server");
+                prefs.putBoolean("localServer", true);
+                settingsItem.setDisable(true);
+                openLocalServer();
+            } else {
+                System.out.println("ls: remote server");
+                prefs.putBoolean("localServer", false);
+                settingsItem.setDisable(false);
+            }
+        }
+        );
+        remoteServer.setOnAction(e
+                -> {
+            if (remoteServer.isSelected()) {
+                System.out.println("rs: remote server");
+                settingsItem.setDisable(false);
+                prefs.putBoolean("localServer", false);
+                openRemoteServer(prefs);
+            } else {
+                System.out.println("rs: local server");
+                prefs.putBoolean("localServer", true);
+                settingsItem.setDisable(true);
+            }
+        });
+        menuOptions.getItems().addAll(localServer, remoteServer, settingsItem);
+
         final MenuItem infoItem = new MenuItem("Info");
         menuInfo.getItems().add(infoItem);
         infoItem.setGraphic(ivInfo);
@@ -349,7 +399,7 @@ public class SX4Monitor extends Application {
             showInfoAlert("Info", "SX4Monitor\nhttps://opensx.net/sx4 ", "Programm version:" + version);
         });
 
-        menuBar.getMenus().addAll(menu1, menu2, menuInfo);
+        menuBar.getMenus().addAll(menu1, menuOptions, menuInfo);
     }
 
     private void createButtons(HBox buttonsPane) {
@@ -474,5 +524,99 @@ public class SX4Monitor extends Application {
         tableViewLBData[1].setItems(new SortedList<>(col2Data.sorted()));
         tableViewLBData[2].setItems(new SortedList<>(col3Data.sorted()));
 
+    }
+
+    private void selectServerIP(Preferences prefs, String name) {
+
+        TextInputDialog dialog = new TextInputDialog(name);
+
+        dialog.setTitle("remote server IP");
+        dialog.setHeaderText(null);
+
+        Optional<String> result = dialog.showAndWait();
+
+        result.ifPresent(hostname -> {
+            try {
+                InetAddress ip = InetAddress.getByName(hostname);
+                System.out.println("new ip selected = " + hostname);
+                if (client != null) {
+                    client.shutdown();
+                }
+                try {
+                    prefs.put("server", hostname);
+                    Thread.sleep(100);
+                    client = new SXnetClientThread(ip);
+                    client.start();
+                } catch (InterruptedException ex) {
+                    System.out.println("kann Client nicht starten");
+                }
+                settingsItem = new MenuItem(hostname);
+
+            } catch (UnknownHostException ex) {
+                System.out.println("ungültiger Host");
+            }
+
+            dialog.close();
+        });
+
+    }
+
+    private void openServer(Preferences prefs) {
+        if (prefs.getBoolean("localServer", true)) {
+            openLocalServer();
+        } else {
+            openRemoteServer(prefs);
+        }
+    }
+
+    private void openLocalServer() {
+        List<InetAddress> ips = NIC.getmyip();
+        if (!ips.isEmpty()) {
+            InetAddress ip = ips.get(0);
+            if (client != null) {
+                client.shutdown();
+            }
+            try {
+                Thread.sleep(100);
+                client = new SXnetClientThread(ip);
+                client.start();
+            } catch (InterruptedException ex) {
+                System.out.println("kann Client nicht starten");
+            }
+        } else {
+            System.out.println("ERROR: kein Netzwerk, kann Client nicht starten");
+        }
+    }
+
+    private void openRemoteServer(Preferences prefs) {
+        String serverName = prefs.get("server", DEFAULT_SERVER);
+        InetAddress ip = null;
+        try {
+            ip = InetAddress.getByName(serverName);
+        } catch (UnknownHostException ex) {
+            System.out.println("ERROR: unknownHost, kann Client nicht starten");
+        }
+        if (client != null) {
+            client.shutdown();
+        }
+        try {
+            Thread.sleep(100);
+
+            client = new SXnetClientThread(ip);
+            client.start();
+        } catch (InterruptedException ex) {
+            System.out.println("kann Client nicht starten");
+        }
+    }
+
+    private String getDefaultHostAddress(Preferences prefs) {
+        List<InetAddress> ips = NIC.getmyip();
+        String host = "";
+        if (ips.isEmpty()) {
+            host = prefs.get("server", DEFAULT_SERVER);
+        } else {
+            host = ips.get(0).getHostAddress();
+        }
+        return host;
     }
 }
