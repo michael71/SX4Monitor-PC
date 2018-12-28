@@ -37,24 +37,31 @@ import java.util.Optional;
 import java.util.function.Consumer;
 import java.util.logging.Level;
 import java.util.logging.Logger;
+import java.util.prefs.Preferences;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
 import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.event.EventHandler;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.Button;
 import javafx.scene.control.ButtonType;
 import javafx.scene.control.ChoiceDialog;
+import javafx.scene.control.Menu;
+import javafx.scene.control.MenuBar;
+import javafx.scene.control.MenuItem;
 import javafx.scene.control.TableCell;
 import javafx.scene.control.TableRow;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
+import javafx.scene.layout.VBox;
 import javafx.scene.paint.Color;
+import javafx.stage.Window;
 import javafx.util.Callback;
 import javafx.util.Duration;
 
@@ -83,15 +90,19 @@ public class SX4Monitor extends Application {
     private static final List<Integer> channelsOfInterest = Collections.synchronizedList(new ArrayList<>());
 
     private final TableView[] tableViewLBData = {new TableView(), new TableView(), new TableView()};
+    
+    final String version = "v0.32 - 24 Dec 2018";
 
     @Override
     public void start(Stage theStage) throws InterruptedException {
 
-        final String version = "v0.32 - 24 Dec 2018";
+        
         theStage.setTitle("SX4 Monitor");
 
         final Parameters params = getParameters();
         final List<String> parameters = params.getRaw();
+
+        final Preferences prefs = Preferences.userNodeForPackage(this.getClass());
 
         // load the image
         Image green = new Image("/de/blankedv/sx4monitorfx/res/greendot.png");
@@ -118,6 +129,9 @@ public class SX4Monitor extends Application {
             System.exit(0);
         });
 
+         MenuBar menuBar = new MenuBar();
+        createMenu(prefs,menuBar);
+
         BorderPane bp = new BorderPane();
         bp.setPadding(new Insets(5, 5, 5, 5));
 
@@ -128,6 +142,7 @@ public class SX4Monitor extends Application {
         statusbar.getChildren().add(status);
 
         GridPane optionsPane = new GridPane();
+        VBox vboxTop = new VBox(menuBar, optionsPane);
         setColumnConstraints(optionsPane);
         optionsPane.add(new Label("Power:"), 0, 0);
 
@@ -186,6 +201,7 @@ public class SX4Monitor extends Application {
         });
 
         Button btnLoco = new Button("+Loco");
+
         optionsPane.add(btnLoco, 4, 0);
         btnLoco.setOnAction((ActionEvent event) -> {
             currentLocoControlID++;
@@ -194,47 +210,8 @@ public class SX4Monitor extends Application {
             allLocoControls.add(lc);
         });
 
-        optionsPane.add(ivInfo, 6, 0);
-        ivInfo.addEventHandler(MouseEvent.MOUSE_CLICKED, event -> {
-            showInfoAlert("Info", "SX4Monitor\nhttps://opensx.net/sx4 ", "Programm version:" + version);
-            event.consume();
-        });
-        optionsPane.add(ivSettings, 5, 0);
-        ivSettings.addEventHandler(MouseEvent.MOUSE_CLICKED, event -> {
-            TextInputDialog dialog = new TextInputDialog("192.168.178.xx");
-
-            dialog.setTitle("Server Adresse");
-            dialog.setHeaderText(null);
-            dialog.setContentText("IP=");
-
-            Optional<String> result = dialog.showAndWait();
-
-            result.ifPresent((String name) -> {
-                InetAddress ip;
-                try {
-                    ip = InetAddress.getByName(name);
-                    System.out.println("new ip selected = " + name);
-                    if (client != null) {
-                        client.shutdown();
-                    }
-                    try {
-                        Thread.sleep(100);
-                        client = new SXnetClientThread(ip);
-                        client.start();
-                    } catch (InterruptedException ex) {
-                        System.out.println("kann Client nicht starten");
-                    }
-
-                } catch (UnknownHostException ex) {
-                    System.out.println("ungültiger Host");
-                }
-            });
-            event.consume();
-        });
-
         optionsPane.setPadding(new Insets(3, 3, 3, 3));
 
-        //Group root = new Group();
         Scene theScene = new Scene(bp, 600, 500);
         theStage.setScene(theScene);
 
@@ -278,38 +255,13 @@ public class SX4Monitor extends Application {
             chanCol.setCellValueFactory(new PropertyValueFactory<>("channel"));
             dataCol.setCellValueFactory(new PropertyValueFactory<>("data"));
             bitsCol.setCellValueFactory(new PropertyValueFactory<>("bits"));
-            // Custom rendering of the table cell.
-            /* no longer used
-            bitsCol.setCellFactory(column -> {
-                return new TableCell<SXValue, String>() {
-                    @Override
-                    protected void updateItem(String item, boolean empty) {
-                        super.updateItem(item, empty);
-
-                        if (item == null || empty) {
-                            setText(null);
-                            setStyle("");
-                        } else {
-                            // Format date.
-                            setText(item);
-                            if (item.charAt(0) == '*') {
-                                setTextFill(Color.CHOCOLATE);
-                                setStyle("-fx-background-color: yellow; -fx-alignment: CENTER;");
-                            } else {
-                                setTextFill(Color.BLACK);
-                                setStyle(" -fx-alignment: CENTER;");
-                            }
-                        }
-                    }
-                };
-            });  */
         }
 
         tableViewLBData[0].setItems(new SortedList<>(col1Data.sorted()));
         tableViewLBData[1].setItems(new SortedList<>(col2Data.sorted()));
         tableViewLBData[2].setItems(new SortedList<>(col3Data.sorted()));
 
-        bp.setTop(optionsPane); // getMenuBar());
+        bp.setTop(vboxTop); 
 
         HBox hbCenter = new HBox(5);
         hbCenter.getChildren().addAll(tableViewLBData[0], tableViewLBData[1], tableViewLBData[2]);
@@ -370,17 +322,19 @@ public class SX4Monitor extends Application {
         launch(args);
     }
 
-    public void showInfoAlert(String title, String header, String msg) {
+    private void showInfoAlert(String title, String header, String msg) {
         Alert alert = new Alert(Alert.AlertType.INFORMATION);
         alert.setContentText(msg);
         alert.setTitle(title);
         alert.setHeaderText(header);
+        Window window = alert.getDialogPane().getScene().getWindow();
+        window.setOnCloseRequest(event -> window.hide());
 
         ButtonType openOpensx = new ButtonType("-> opensx.net/sx4");
         alert.getButtonTypes().addAll(openOpensx);
         Optional<ButtonType> option = alert.showAndWait();
 
-        if (option.get() == openOpensx) {
+        if ((option.isPresent()) && (option.get() == openOpensx)) {
             try {
                 HostServicesDelegate hostServices = HostServicesFactory.getInstance(this);
                 getHostServices().showDocument("https://opensx.net/sx4");
@@ -472,6 +426,27 @@ public class SX4Monitor extends Application {
         return false;
     }
 
+    public static void setNewIP(String name) {
+        InetAddress ip;
+        try {
+            ip = InetAddress.getByName(name);
+            System.out.println("new ip selected = " + name);
+            if (client != null) {
+                client.shutdown();
+            }
+            try {
+                Thread.sleep(100);
+                client = new SXnetClientThread(ip);
+                client.start();
+            } catch (InterruptedException ex) {
+                System.out.println("kann Client nicht starten");
+            }
+
+        } catch (UnknownHostException ex) {
+            System.out.println("ungültiger Host");
+        }
+    }
+
     private static ObservableList<SXValue> getSXDataList(int addr) {
         if (addr < 80) {
 
@@ -505,4 +480,28 @@ public class SX4Monitor extends Application {
 
     }
 
+    private void createMenu(Preferences prefs, MenuBar menuBar) {
+        final Menu menu1 = new Menu("File");
+        final Menu menu2 = new Menu("Options");
+        final Menu menuInfo = new Menu("Help");
+        MenuItem exitItem = new MenuItem("Exit");
+        menu1.getItems().add(exitItem);
+        exitItem.setOnAction((event) -> {
+            System.exit(0);
+        });
+        MenuItem settingsItem = new MenuItem("Settings");
+        menu2.getItems().add(settingsItem);
+        settingsItem.setOnAction((event) -> {
+            Settings.startSett(prefs);
+        });
+        MenuItem infoItem = new MenuItem("Info");
+        menuInfo.getItems().add(infoItem);
+        infoItem.setOnAction((event) -> {
+            System.out.println("info clicked");
+            showInfoAlert("Info", "SX4Monitor\nhttps://opensx.net/sx4 ", "Programm version:" + version);
+        });
+
+       
+        menuBar.getMenus().addAll(menu1, menu2, menuInfo);
+    }
 }
