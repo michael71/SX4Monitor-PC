@@ -34,9 +34,6 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Optional;
-import java.util.function.Consumer;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.prefs.Preferences;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
@@ -44,7 +41,6 @@ import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
-import javafx.event.EventHandler;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.Button;
@@ -53,14 +49,11 @@ import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuBar;
 import javafx.scene.control.MenuItem;
-import javafx.scene.control.TableCell;
 import javafx.scene.control.TableRow;
-import javafx.scene.control.TextInputDialog;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.VBox;
-import javafx.scene.paint.Color;
 import javafx.stage.Window;
 import javafx.util.Callback;
 import javafx.util.Duration;
@@ -90,13 +83,12 @@ public class SX4Monitor extends Application {
     private static final List<Integer> channelsOfInterest = Collections.synchronizedList(new ArrayList<>());
 
     private final TableView[] tableViewLBData = {new TableView(), new TableView(), new TableView()};
-    
-    final String version = "v0.32 - 24 Dec 2018";
+
+    final String version = "v0.33 - 28 Dec 2018";
 
     @Override
     public void start(Stage theStage) throws InterruptedException {
 
-        
         theStage.setTitle("SX4 Monitor");
 
         final Parameters params = getParameters();
@@ -104,33 +96,19 @@ public class SX4Monitor extends Application {
 
         final Preferences prefs = Preferences.userNodeForPackage(this.getClass());
 
-        // load the image
-        Image green = new Image("/de/blankedv/sx4monitorfx/res/greendot.png");
-        Image red = new Image("/de/blankedv/sx4monitorfx/res/reddot.png");
-        ImageView ivInfo = new ImageView(new Image("/de/blankedv/sx4monitorfx/res/info.png"));
-        ImageView ivSettings = new ImageView(new Image("/de/blankedv/sx4monitorfx/res/settings.png"));
-
-        ImageView ivPowerState = new ImageView();
-        globalPower.set(false);
-        if (globalPower.get()) {
-            ivPowerState.setImage(green);
-        } else {
-            ivPowerState.setImage(red);
-        }
-
         // simple displays ImageView the image as is
-        for (String s : parameters) {
+        parameters.forEach((s) -> {
             System.out.println("param: " + s);
-        }
+        });
 
         theStage.setOnCloseRequest((WindowEvent e) -> {
-            // needed for stopping lanbahn thread.
+            // needed for stopping network thread.
             Platform.exit();
             System.exit(0);
         });
 
-         MenuBar menuBar = new MenuBar();
-        createMenu(prefs,menuBar);
+        MenuBar menuBar = new MenuBar();
+        createMenu(prefs, menuBar);
 
         BorderPane bp = new BorderPane();
         bp.setPadding(new Insets(5, 5, 5, 5));
@@ -141,129 +119,19 @@ public class SX4Monitor extends Application {
         HBox.setHgrow(status, Priority.ALWAYS);
         statusbar.getChildren().add(status);
 
-        GridPane optionsPane = new GridPane();
-        VBox vboxTop = new VBox(menuBar, optionsPane);
-        setColumnConstraints(optionsPane);
-        optionsPane.add(new Label("Power:"), 0, 0);
-
-        ivPowerState.addEventHandler(MouseEvent.MOUSE_CLICKED, event -> {
-            // toggle global power
-            if (globalPower.get()) {
-                client.send("SETPOWER 0");
-                globalPower.set(false);
-            } else {
-                client.send("SETPOWER 1");
-                globalPower.set(true);
-            }
-            event.consume();
-        });
-
-        globalPower.addListener((ObservableValue<? extends Boolean> observable, Boolean oldValue, Boolean newValue) -> {
-            if (newValue) {
-                ivPowerState.setImage(green);
-            } else {
-                ivPowerState.setImage(red);
-            }
-        });
-
-        optionsPane.add(ivPowerState, 1, 0);
-
-        Button btnAddChan = new Button("+Monitor");
-        optionsPane.add(btnAddChan, 2, 0);
-        btnAddChan.setOnAction((ActionEvent event) -> {
-            List<Integer> choices = new ArrayList<>();
-            for (int i = 0; i <= SXMAX; i++) {
-                choices.add(i);
-            }
-            ChoiceDialog<Integer> dialog = new ChoiceDialog<>(80, choices);
-            dialog.setTitle("+ Adresse ?");
-            dialog.setHeaderText("weitere Adresse monitoren:");
-            dialog.setContentText("Auswahl:");
-            Optional<Integer> result = dialog.showAndWait();
-            result.ifPresent(addr -> {
-                System.out.println("ausgewählte Adresse: " + addr);
-                if (!channelsOfInterest.contains(addr)) {
-                    channelsOfInterest.add(addr);
-                    // if this channel was not used before, its data must be ==0
-                    (getSXDataList(addr)).add(new SXValue(addr, 0, true));
-                    client.send("R " + addr); // just to be sure ...
-                }
-            });
-        });
-
-        Button btnControlChan = new Button("+Control");
-        optionsPane.add(btnControlChan, 3, 0);
-        btnControlChan.setOnAction((ActionEvent event) -> {
-            currentAccessoryControlID++;
-            AccessoryControl ac = new AccessoryControl(currentAccessoryControlID);
-            ac.updateUI();
-            allAccessoryControls.add(ac);
-        });
-
-        Button btnLoco = new Button("+Loco");
-
-        optionsPane.add(btnLoco, 4, 0);
-        btnLoco.setOnAction((ActionEvent event) -> {
-            currentLocoControlID++;
-            LocoControl lc = new LocoControl(currentLocoControlID);
-            lc.updateUI();
-            allLocoControls.add(lc);
-        });
-
-        optionsPane.setPadding(new Insets(3, 3, 3, 3));
+        HBox buttonsPane = new HBox(6);
+        VBox vboxTop = new VBox(menuBar, buttonsPane);
+        createButtons(buttonsPane);
+        buttonsPane.setPadding(new Insets(3, 3, 3, 3));
 
         Scene theScene = new Scene(bp, 600, 500);
         theStage.setScene(theScene);
 
-        for (int i = 0; i < COLS; i++) {
-            TableColumn<SXValue, String> chanCol = new TableColumn<>("ADR");
-            // chanCol.setPrefWidth(70);
-            TableColumn<SXValue, String> dataCol = new TableColumn<>("D");
-            TableColumn<SXValue, String> bitsCol = new TableColumn<>("12345678");
-            //dataCol.setPrefWidth(50);
-            tableViewLBData[i].getColumns().setAll(chanCol, dataCol, bitsCol);
+        createDataTables();
 
-            tableViewLBData[i].setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
-            chanCol.setMaxWidth(1f * Integer.MAX_VALUE * 18); // 30% width
-            chanCol.setStyle("-fx-alignment: CENTER;");
-            dataCol.setMaxWidth(1f * Integer.MAX_VALUE * 18); // 70% width
-            dataCol.setStyle("-fx-alignment: CENTER;");
-            bitsCol.setMaxWidth(1f * Integer.MAX_VALUE * 64); // 70% width
-            bitsCol.setStyle("-fx-alignment: CENTER;");
+        bp.setTop(vboxTop);
 
-            tableViewLBData[i].setCenterShape(true);
-            tableViewLBData[i].setRowFactory(new Callback<TableView<SXValue>, TableRow<SXValue>>() {
-                @Override
-                public TableRow<SXValue> call(TableView<SXValue> tableView) {
-                    final TableRow<SXValue> row = new TableRow<SXValue>() {
-                        @Override
-                        protected void updateItem(SXValue sxv, boolean empty) {
-                            super.updateItem(sxv, empty);
-                            if (!empty) {
-                                if (sxv.isMarked()) {
-                                    setStyle("-fx-background-color: yellow;");
-                                } else {
-                                    setStyle("");
-                                }
-                            }
-                        }
-                    };
-                    return row;
-                }
-            });
-
-            chanCol.setCellValueFactory(new PropertyValueFactory<>("channel"));
-            dataCol.setCellValueFactory(new PropertyValueFactory<>("data"));
-            bitsCol.setCellValueFactory(new PropertyValueFactory<>("bits"));
-        }
-
-        tableViewLBData[0].setItems(new SortedList<>(col1Data.sorted()));
-        tableViewLBData[1].setItems(new SortedList<>(col2Data.sorted()));
-        tableViewLBData[2].setItems(new SortedList<>(col3Data.sorted()));
-
-        bp.setTop(vboxTop); 
-
-        HBox hbCenter = new HBox(5);
+        HBox hbCenter = new HBox(3);
         hbCenter.getChildren().addAll(tableViewLBData[0], tableViewLBData[1], tableViewLBData[2]);
         bp.setCenter(hbCenter);
 
@@ -284,8 +152,7 @@ public class SX4Monitor extends Application {
 
         // prepare Alert for Program termination in case of loss of connection
         Alert alert = new Alert(AlertType.ERROR);
-        String s = "Programm wird beendet";
-        alert.setContentText(s);
+        alert.setContentText("Programm wird beendet");
         alert.showingProperty().addListener((observable, oldValue, newValue) -> {
             if (!newValue) {
                 System.exit(1);
@@ -296,13 +163,13 @@ public class SX4Monitor extends Application {
             alert.setHeaderText("Netzwerk überprüfen!");
             alert.show();  // sofort anzeigen
         } else {
-            // check connection every few seconds 
+            // check connection every few seconds
             alert.setTitle("Fehler: Verbindung verloren!");
             alert.setHeaderText("keine Verbindung mehr zu SX4...");
             Timeline twoSeconds = new Timeline(new KeyFrame(Duration.seconds(2), (ActionEvent event) -> {
 
                 // check if connection is still alive
-                // this is run on UI Thread (in contrast to "the good old java Timer" ...)
+                // this is run on UI Thread (in contrast to "the good old java Timer")
                 if ((System.currentTimeMillis() - timeOfLastMsgReceived) > 10 * 1000) {
                     alert.show();
                 }
@@ -400,8 +267,6 @@ public class SX4Monitor extends Application {
         // update this lists for display the data
         for (SXValue sxv : getSXDataList(addr)) {
             if (sxv.channel == addr) {
-                //lv.data = data;
-                //exists = true;
                 getSXDataList(addr).remove(sxv);
                 break;
             }
@@ -459,49 +324,155 @@ public class SX4Monitor extends Application {
         return null;
     }
 
-    private void setColumnConstraints(GridPane gp) {
-        gp.setHgap(5);
-        gp.setVgap(5);
-        ColumnConstraints column1 = new ColumnConstraints();
-        column1.setPercentWidth(10);
-        ColumnConstraints column2 = new ColumnConstraints();
-        column2.setPercentWidth(10);
-        ColumnConstraints column3 = new ColumnConstraints();
-        column3.setPercentWidth(15);
-        ColumnConstraints column4 = new ColumnConstraints();
-        column4.setPercentWidth(15);
-        ColumnConstraints column5 = new ColumnConstraints();
-        column5.setPercentWidth(15);
-        ColumnConstraints column6 = new ColumnConstraints();
-        column6.setPercentWidth(25);
-        ColumnConstraints column7 = new ColumnConstraints();
-        column7.setPercentWidth(5);
-        gp.getColumnConstraints().addAll(column1, column2, column3, column4, column5, column6, column7);
-
-    }
-
     private void createMenu(Preferences prefs, MenuBar menuBar) {
+        final ImageView ivSettings = new ImageView(new Image("/de/blankedv/sx4monitorfx/res/settings.png"));
+        final ImageView ivInfo = new ImageView(new Image("/de/blankedv/sx4monitorfx/res/info.png"));
         final Menu menu1 = new Menu("File");
         final Menu menu2 = new Menu("Options");
         final Menu menuInfo = new Menu("Help");
-        MenuItem exitItem = new MenuItem("Exit");
+        final MenuItem exitItem = new MenuItem("Exit");
         menu1.getItems().add(exitItem);
         exitItem.setOnAction((event) -> {
             System.exit(0);
         });
-        MenuItem settingsItem = new MenuItem("Settings");
+        final MenuItem settingsItem = new MenuItem("Settings");
         menu2.getItems().add(settingsItem);
+        settingsItem.setGraphic(ivSettings);
         settingsItem.setOnAction((event) -> {
             Settings.startSett(prefs);
         });
-        MenuItem infoItem = new MenuItem("Info");
+        final MenuItem infoItem = new MenuItem("Info");
         menuInfo.getItems().add(infoItem);
+        infoItem.setGraphic(ivInfo);
         infoItem.setOnAction((event) -> {
             System.out.println("info clicked");
             showInfoAlert("Info", "SX4Monitor\nhttps://opensx.net/sx4 ", "Programm version:" + version);
         });
 
-       
         menuBar.getMenus().addAll(menu1, menu2, menuInfo);
+    }
+
+    private void createButtons(HBox buttonsPane) {
+
+        // load the image
+        Image green = new Image("/de/blankedv/sx4monitorfx/res/greendot.png");
+        Image red = new Image("/de/blankedv/sx4monitorfx/res/reddot.png");
+
+        ImageView ivPowerState = new ImageView();
+        globalPower.set(false);
+        if (globalPower.get()) {
+            ivPowerState.setImage(green);
+        } else {
+            ivPowerState.setImage(red);
+        }
+
+        ivPowerState.addEventHandler(MouseEvent.MOUSE_CLICKED, event -> {
+            // toggle global power
+            if (globalPower.get()) {
+                client.send("SETPOWER 0");
+                globalPower.set(false);
+            } else {
+                client.send("SETPOWER 1");
+                globalPower.set(true);
+            }
+            event.consume();
+        });
+
+        globalPower.addListener((ObservableValue<? extends Boolean> observable, Boolean oldValue, Boolean newValue) -> {
+            if (newValue) {
+                ivPowerState.setImage(green);
+            } else {
+                ivPowerState.setImage(red);
+            }
+        });
+
+        Button btnAddChan = new Button("+Monitor");
+        btnAddChan.setOnAction((ActionEvent event) -> {
+            List<Integer> choices = new ArrayList<>();
+            for (int i = 0; i <= SXMAX; i++) {
+                choices.add(i);
+            }
+            ChoiceDialog<Integer> dialog = new ChoiceDialog<>(80, choices);
+            dialog.setTitle("+ Adresse ?");
+            dialog.setHeaderText("weitere Adresse monitoren:");
+            dialog.setContentText("Auswahl:");
+            Optional<Integer> result = dialog.showAndWait();
+            result.ifPresent(addr -> {
+                System.out.println("ausgewählte Adresse: " + addr);
+                if (!channelsOfInterest.contains(addr)) {
+                    channelsOfInterest.add(addr);
+                    // if this channel was not used before, its data must be ==0
+                    (getSXDataList(addr)).add(new SXValue(addr, 0, true));
+                    client.send("R " + addr); // just to be sure ...
+                }
+            });
+        });
+
+        Button btnControlChan = new Button("+Accessory");
+        btnControlChan.setOnAction((ActionEvent event) -> {
+            currentAccessoryControlID++;
+            AccessoryControl ac = new AccessoryControl(currentAccessoryControlID);
+            ac.updateUI();
+            allAccessoryControls.add(ac);
+        });
+
+        Button btnLoco = new Button("+Loco");
+        btnLoco.setOnAction((ActionEvent event) -> {
+            currentLocoControlID++;
+            LocoControl lc = new LocoControl(currentLocoControlID);
+            lc.updateUI();
+            allLocoControls.add(lc);
+        });
+
+        buttonsPane.getChildren().addAll(new Label("Power:"), ivPowerState, btnAddChan, btnControlChan, btnLoco);
+
+    }
+
+    private void createDataTables() {
+        for (int i = 0; i < COLS; i++) {
+            TableColumn<SXValue, String> chanCol = new TableColumn<>("ADR");
+            TableColumn<SXValue, String> dataCol = new TableColumn<>("D");
+            TableColumn<SXValue, String> bitsCol = new TableColumn<>("12345678");
+
+            tableViewLBData[i].getColumns().setAll(chanCol, dataCol, bitsCol);
+
+            tableViewLBData[i].setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+            chanCol.setMaxWidth(1f * Integer.MAX_VALUE * 18); // 30% width
+            chanCol.setStyle("-fx-alignment: CENTER;");
+            dataCol.setMaxWidth(1f * Integer.MAX_VALUE * 18); // 70% width
+            dataCol.setStyle("-fx-alignment: CENTER;");
+            bitsCol.setMaxWidth(1f * Integer.MAX_VALUE * 64); // 70% width
+            bitsCol.setStyle("-fx-alignment: CENTER;");
+
+            tableViewLBData[i].setCenterShape(true);
+            tableViewLBData[i].setRowFactory(new Callback<TableView<SXValue>, TableRow<SXValue>>() {
+                @Override
+                public TableRow<SXValue> call(TableView<SXValue> tableView) {
+                    final TableRow<SXValue> row = new TableRow<SXValue>() {
+                        @Override
+                        protected void updateItem(SXValue sxv, boolean empty) {
+                            super.updateItem(sxv, empty);
+                            if (!empty) {
+                                if (sxv.isMarked()) {
+                                    setStyle("-fx-background-color: yellow;");
+                                } else {
+                                    setStyle("");
+                                }
+                            }
+                        }
+                    };
+                    return row;
+                }
+            });
+
+            chanCol.setCellValueFactory(new PropertyValueFactory<>("channel"));
+            dataCol.setCellValueFactory(new PropertyValueFactory<>("data"));
+            bitsCol.setCellValueFactory(new PropertyValueFactory<>("bits"));
+        }
+
+        tableViewLBData[0].setItems(new SortedList<>(col1Data.sorted()));
+        tableViewLBData[1].setItems(new SortedList<>(col2Data.sorted()));
+        tableViewLBData[2].setItems(new SortedList<>(col3Data.sorted()));
+
     }
 }

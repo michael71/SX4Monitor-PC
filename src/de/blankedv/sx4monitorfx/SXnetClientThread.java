@@ -16,7 +16,6 @@ import java.net.InetSocketAddress;
 
 import java.net.Socket;
 import java.net.SocketAddress;
-import java.net.UnknownHostException;
 import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
@@ -79,6 +78,7 @@ public class SXnetClientThread extends Thread {
         shutdownFlag = true;
     }
 
+    @Override
     public void run() {
 
         shutdownFlag = false;
@@ -103,12 +103,6 @@ public class SXnetClientThread extends Thread {
             } catch (InterruptedException ex) { 
                 Logger.getLogger(SXnetClientThread.class.getName()).log(Level.SEVERE, null, ex);
             }
-            try {
-                Thread.sleep(50);  // reduce CPU utilization
-            } catch (InterruptedException ex) {
-                System.out.println(ex.getMessage());
-            }
-
         }
 
         clientTerminated = true;
