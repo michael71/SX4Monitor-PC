@@ -6,6 +6,8 @@
 package de.blankedv.sx4monitorfx;
 
 import static de.blankedv.sx4monitorfx.SX4Monitor.INVALID_INT;
+import static de.blankedv.sx4monitorfx.SX4Monitor.LBMAX;
+import static de.blankedv.sx4monitorfx.SX4Monitor.LBMIN;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -199,16 +201,27 @@ public class SXnetClientThread extends Thread {
                     case "S":    // local echo
                     case "SX":   // local echo
                         if (info.length >= 3) {
-                            addr = getChannelFromString(info[1]);
+                            addr = getSXChannelFromString(info[1]);
                             data = getDataFromString(info[2]);
                             if ((addr != INVALID_INT) && (data != INVALID_INT)) {
                                 SX4Monitor.update(addr, data);  // sxData[] get updated in SX4Monitor
                             }
                         }
                         break;
+                    case "SET":
+                    case "XL":
+                        if (info.length >= 3) {
+                            addr = getLanbahnChannelFromString(info[1]);
+                            data = getDataFromString(info[2]);
+                            if ((addr != INVALID_INT) && (data != INVALID_INT)) {
+                                SX4Monitor.update(addr, data);  // sxData[] get updated in SX4Monitor
+                            }
+                        }
+                        break;
+                        
                     case "XPOWER":
                         if (info.length >= 2) {
-                            data = getChannelFromString(info[1]);
+                            data = getSXChannelFromString(info[1]);
                             if (data != INVALID_INT) {
                                 SX4Monitor.updatePower(data);
                             }
@@ -235,11 +248,26 @@ public class SXnetClientThread extends Thread {
         return data;
     }
 
-    private int getChannelFromString(String s) {
+    private int getSXChannelFromString(String s) {
         Integer channel = INVALID_INT;
         try {
             channel = Integer.parseInt(s);
             if ((channel >= 0) && (channel <= SXMAX)) {
+                return channel;
+            } else {
+                channel = INVALID_INT;
+            }
+        } catch (Exception e) {
+
+        }
+        return channel;
+    }
+    
+    private int getLanbahnChannelFromString(String s) {
+        Integer channel = INVALID_INT;
+        try {
+            channel = Integer.parseInt(s);
+            if ((channel >= LBMIN) && (channel <= LBMAX)) {
                 return channel;
             } else {
                 channel = INVALID_INT;

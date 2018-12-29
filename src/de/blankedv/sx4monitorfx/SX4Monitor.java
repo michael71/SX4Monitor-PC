@@ -41,6 +41,7 @@ import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
+import javafx.event.EventHandler;
 import javafx.scene.control.Alert;
 import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.Button;
@@ -51,6 +52,7 @@ import javafx.scene.control.Menu;
 import javafx.scene.control.MenuBar;
 import javafx.scene.control.MenuItem;
 import javafx.scene.control.RadioMenuItem;
+import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TableRow;
 import javafx.scene.control.TextInputDialog;
 import javafx.scene.control.ToggleGroup;
@@ -74,6 +76,9 @@ public class SX4Monitor extends Application {
     public static SXnetClientThread client;
     public static BooleanProperty globalPower = new SimpleBooleanProperty(false);
     public static final int[] sxData = new int[SXMAX + 1];
+    public static final int LBMIN = 1200;  // minimum (pure) lanbahn address
+    public static final int LBMAX = 9999;  // maximum (pure) lanbahn address
+    public static final int MAX_SX_COL = 2;  // cols 0, 1, 2 are "SX" type, else lanbahn
     public static String hostAddress;
 
     private static final ArrayList<LocoControl> allLocoControls = new ArrayList<>();
@@ -81,13 +86,14 @@ public class SX4Monitor extends Application {
     private static final ArrayList<AccessoryControl> allAccessoryControls = new ArrayList<>();
     private static int currentAccessoryControlID = 0;
 
-    private static final int COLS = 3;    // number of rows of tableViews
+    private static final ObservableList<SXValue> col0Data = FXCollections.observableArrayList();
     private static final ObservableList<SXValue> col1Data = FXCollections.observableArrayList();
     private static final ObservableList<SXValue> col2Data = FXCollections.observableArrayList();
     private static final ObservableList<SXValue> col3Data = FXCollections.observableArrayList();
+    private static final ObservableList<SXValue> col4Data = FXCollections.observableArrayList();
     private static final List<Integer> channelsOfInterest = Collections.synchronizedList(new ArrayList<>());
 
-    private final TableView[] tableViewLBData = {new TableView(), new TableView(), new TableView()};
+    private final TableView[] tableViewData = {new TableView(), new TableView(), new TableView(), new TableView(), new TableView()};
 
     private MenuItem settingsItem;
 
@@ -119,7 +125,7 @@ public class SX4Monitor extends Application {
         createMenu(prefs, menuBar);
 
         BorderPane bp = new BorderPane();
-        bp.setPadding(new Insets(5, 5, 5, 5));
+        bp.setPadding(new Insets(0, 0, 0, 0));
 
         HBox statusbar = new HBox(8);
         Label status = new Label("ready");
@@ -132,15 +138,31 @@ public class SX4Monitor extends Application {
         createButtons(buttonsPane);
         buttonsPane.setPadding(new Insets(3, 3, 3, 3));
 
-        Scene theScene = new Scene(bp, 600, 500);
-        theStage.setScene(theScene);
-
-        createDataTables();
-
+        createSXDataTables();
         bp.setTop(vboxTop);
 
         HBox hbCenter = new HBox(3);
-        hbCenter.getChildren().addAll(tableViewLBData[0], tableViewLBData[1], tableViewLBData[2]);
+        /*HBox.setHgrow(tableViewSXData[0], Priority.ALWAYS);
+        HBox.setHgrow(tableViewSXData[1], Priority.ALWAYS);
+        HBox.setHgrow(tableViewSXData[2], Priority.ALWAYS);
+        HBox.setHgrow(tableViewLanbahnData[0], Priority.ALWAYS);
+        HBox.setHgrow(tableViewLanbahnData[1], Priority.ALWAYS);
+        tableViewSXData[0].setPrefWidth(100000 * 25);
+        tableViewSXData[1].setPrefWidth(100000 * 25);
+        tableViewSXData[2].setPrefWidth(100000 * 25);
+        tableViewLanbahnData[0].setPrefWidth(100000 * 20);
+        tableViewLanbahnData[1].setPrefWidth(100000 * 20); */
+        hbCenter.getChildren().addAll(tableViewData[0], tableViewData[1], tableViewData[2]);
+        Scene theScene;
+        if (prefs.getBoolean("virtualData", false)) {
+            hbCenter.getChildren().addAll(tableViewData[3], tableViewData[4]);
+            theScene = new Scene(bp, 950, 500);
+        } else {
+            theScene = new Scene(bp, 600, 500);
+
+        }
+        theStage.setScene(theScene);
+
         bp.setCenter(hbCenter);
 
         bp.setBottom(statusbar);   // add the status line at the bottom
@@ -155,38 +177,37 @@ public class SX4Monitor extends Application {
 
         theStage.show();
 
-        openServer(prefs);
-
-        // prepare Alert for Program termination in case of loss of connection
-        Alert alert = new Alert(AlertType.ERROR);
-        alert.setContentText("Programm wird beendet");
-        alert.showingProperty().addListener((observable, oldValue, newValue) -> {
-            if (!newValue) {
-                System.exit(1);
-            }
-        });
-        if (shutdownFlag) {   // no connection from the beginning
-            alert.setTitle("Fehler: Keine Verbindung zu SX4 möglich!");
-            alert.setHeaderText("Netzwerk überprüfen!");
-            alert.show();  // sofort anzeigen
-        } else {
-            // check connection every few seconds
-            alert.setTitle("Fehler: Verbindung verloren!");
-            alert.setHeaderText("keine Verbindung mehr zu SX4...");
-            Timeline twoSeconds = new Timeline(new KeyFrame(Duration.seconds(2), (ActionEvent event) -> {
-
-                // check if connection is still alive
-                // this is run on UI Thread (in contrast to "the good old java Timer")
-                if ((System.currentTimeMillis() - timeOfLastMsgReceived) > 10 * 1000) {
-                    alert.show();
-                }
-                doOldDataCheck(col1Data);
-                doOldDataCheck(col2Data);
-                doOldDataCheck(col3Data);
-            }));
-            twoSeconds.setCycleCount(Timeline.INDEFINITE);
-            twoSeconds.play();
+        boolean result = openServer(prefs);
+        if (!result) {
+            Dialogs.ErrorExit("Fehler: Keine Verbindung zu SX4 möglich!", "Netzwerk überprüfen!");
         }
+
+        // check connection every few seconds
+        Timeline fiveSeconds = new Timeline(new KeyFrame(Duration.seconds(5), (ActionEvent event) -> {
+            // check if connection is still alive, this is run on UI Thread (in contrast to "the good old java Timer")
+            if ((System.currentTimeMillis() - timeOfLastMsgReceived) >= 10 * 1000) {
+                timeOfLastMsgReceived = System.currentTimeMillis() + 10 * 1000;  // shown again after 20secs
+                Platform.runLater(() -> {
+                    Dialogs.ErrorExit("Fehler: Verbindung verloren!", "keine Verbindung mehr zu SX4...");
+                });
+            }
+        }));
+        fiveSeconds.setCycleCount(Timeline.INDEFINITE);
+        fiveSeconds.play();
+
+        Timeline twoSeconds = new Timeline(new KeyFrame(Duration.seconds(2), (ActionEvent event) -> {
+            doOldDataCheck(col0Data);
+            doOldDataCheck(col1Data);
+            doOldDataCheck(col2Data);
+            if (prefs.getBoolean("virtualData", false)) {
+                doOldDataCheck(col3Data);
+                doOldDataCheck(col4Data);
+            }
+        }));
+
+        twoSeconds.setCycleCount(Timeline.INDEFINITE);
+        twoSeconds.play();
+
     }
 
     /**
@@ -194,28 +215,6 @@ public class SX4Monitor extends Application {
      */
     public static void main(String[] args) {
         launch(args);
-    }
-
-    private void showInfoAlert(String title, String header, String msg) {
-        Alert alert = new Alert(Alert.AlertType.INFORMATION);
-        alert.setContentText(msg);
-        alert.setTitle(title);
-        alert.setHeaderText(header);
-        Window window = alert.getDialogPane().getScene().getWindow();
-        window.setOnCloseRequest(event -> window.hide());
-
-        ButtonType openOpensx = new ButtonType("-> opensx.net/sx4");
-        alert.getButtonTypes().addAll(openOpensx);
-        Optional<ButtonType> option = alert.showAndWait();
-
-        if ((option.isPresent()) && (option.get() == openOpensx)) {
-            try {
-                HostServicesDelegate hostServices = HostServicesFactory.getInstance(this);
-                getHostServices().showDocument("https://opensx.net/sx4");
-            } catch (Exception e) {
-                System.out.println(e.getMessage());
-            }
-        }
     }
 
     public void doOldDataCheck(ObservableList<SXValue> colD) {
@@ -259,17 +258,19 @@ public class SX4Monitor extends Application {
 
     // new data received from SXnetClientThread
     public static void update(int addr, int data) {
-        sxData[addr] = data;  // update the sxData
-        //System.out.println("update "+addr+" "+data);
-        // update all controls
-        Platform.runLater(() -> {
-            allLocoControls.stream().filter((lc) -> (lc.getAddress() == addr)).forEachOrdered((lc) -> {
-                lc.updateUI();  // TODO data value ignored currently
+        if (addr <= LBMIN) {
+            sxData[addr] = data;  // update the sxData
+            //System.out.println("update "+addr+" "+data);
+            // update all controls
+            Platform.runLater(() -> {
+                allLocoControls.stream().filter((lc) -> (lc.getAddress() == addr)).forEachOrdered((lc) -> {
+                    lc.updateUI();  // TODO data value ignored currently
+                });
+                allAccessoryControls.stream().filter((ac) -> (ac.getAddress() == addr)).forEachOrdered((ac) -> {
+                    ac.updateUI();
+                });
             });
-            allAccessoryControls.stream().filter((ac) -> (ac.getAddress() == addr)).forEachOrdered((ac) -> {
-                ac.updateUI();
-            });
-        });
+        }
 
         // update this lists for display the data
         for (SXValue sxv : getSXDataList(addr)) {
@@ -279,9 +280,8 @@ public class SX4Monitor extends Application {
             }
         }
         // then create new
-        // ! update of the data only does not trigger "change" of
-        // ObservableList lanbahnData !
-        if ((data != 0) || channelsOfInterest.contains(addr)) {
+        // ! update of the data only does not trigger "change" of ObservableList
+        if ((data != 0) || channelsOfInterest.contains(addr) || (addr >= LBMIN)) {
             getSXDataList(addr).add(new SXValue(addr, data, true));
             if (!channelsOfInterest.contains(addr)) {
                 channelsOfInterest.add(addr);
@@ -321,14 +321,16 @@ public class SX4Monitor extends Application {
 
     private static ObservableList<SXValue> getSXDataList(int addr) {
         if (addr < 80) {
-
-            return col1Data;
+            return col0Data;
         } else if ((addr >= 80) && (addr <= 90)) {
-            return col2Data;
+            return col1Data;
         } else if ((addr > 90) && (addr <= SXMAX)) {
+            return col2Data;
+        } else if ((addr >= LBMIN) && (addr < 2000)) {
             return col3Data;
+        } else {
+            return col4Data;  // put all other addresses into last col
         }
-        return null;
     }
 
     private void createMenu(Preferences prefs, MenuBar menuBar) {
@@ -342,6 +344,7 @@ public class SX4Monitor extends Application {
         exitItem.setOnAction((event) -> {
             System.exit(0);
         });
+        hostAddress = prefs.get("server", DEFAULT_SERVER);
         settingsItem = new MenuItem(hostAddress);
 
         //settingsItem.setGraphic(ivSettings);
@@ -389,14 +392,29 @@ public class SX4Monitor extends Application {
                 settingsItem.setDisable(true);
             }
         });
-        menuOptions.getItems().addAll(localServer, remoteServer, settingsItem);
+
+        RadioMenuItem virtData = new RadioMenuItem("Disp virtual Data");
+        virtData.setSelected(prefs.getBoolean("virtualData", false));
+
+        virtData.setOnAction(e
+                -> {
+            if (virtData.isSelected()) {
+                System.out.println("virtData ON");
+                prefs.putBoolean("virtualData", true);
+            } else {
+                System.out.println("virtData OFF");
+                prefs.putBoolean("virtualData", false);
+            }
+        });
+
+        menuOptions.getItems().addAll(localServer, remoteServer, settingsItem, new SeparatorMenuItem(), virtData);
 
         final MenuItem infoItem = new MenuItem("Info");
         menuInfo.getItems().add(infoItem);
         infoItem.setGraphic(ivInfo);
         infoItem.setOnAction((event) -> {
             System.out.println("info clicked");
-            showInfoAlert("Info", "SX4Monitor\nhttps://opensx.net/sx4 ", "Programm version:" + version);
+            Dialogs.InfoAlert("Info", "SX4Monitor\nhttps://opensx.net/sx4 ", "Programm version:" + version, this);
         });
 
         menuBar.getMenus().addAll(menu1, menuOptions, menuInfo);
@@ -478,24 +496,28 @@ public class SX4Monitor extends Application {
 
     }
 
-    private void createDataTables() {
-        for (int i = 0; i < COLS; i++) {
+    private void createSXDataTables() {
+        for (int i = 0; i < 5; i++) {
             TableColumn<SXValue, String> chanCol = new TableColumn<>("ADR");
             TableColumn<SXValue, String> dataCol = new TableColumn<>("D");
-            TableColumn<SXValue, String> bitsCol = new TableColumn<>("12345678");
+            if (i <= MAX_SX_COL) {
+                TableColumn<SXValue, String> bitsCol = new TableColumn<>("12345678");
+                tableViewData[i].getColumns().setAll(chanCol, dataCol, bitsCol);
+                bitsCol.setMaxWidth(1f * Integer.MAX_VALUE * 64); // 70% width
+                bitsCol.setCellValueFactory(new PropertyValueFactory<>("bits"));
+                bitsCol.setStyle("-fx-alignment: CENTER;");
+            } else {
+                tableViewData[i].getColumns().setAll(chanCol, dataCol);
+            }
 
-            tableViewLBData[i].getColumns().setAll(chanCol, dataCol, bitsCol);
-
-            tableViewLBData[i].setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
+            tableViewData[i].setColumnResizePolicy(TableView.CONSTRAINED_RESIZE_POLICY);
             chanCol.setMaxWidth(1f * Integer.MAX_VALUE * 18); // 30% width
             chanCol.setStyle("-fx-alignment: CENTER;");
             dataCol.setMaxWidth(1f * Integer.MAX_VALUE * 18); // 70% width
             dataCol.setStyle("-fx-alignment: CENTER;");
-            bitsCol.setMaxWidth(1f * Integer.MAX_VALUE * 64); // 70% width
-            bitsCol.setStyle("-fx-alignment: CENTER;");
 
-            tableViewLBData[i].setCenterShape(true);
-            tableViewLBData[i].setRowFactory(new Callback<TableView<SXValue>, TableRow<SXValue>>() {
+            tableViewData[i].setCenterShape(true);
+            tableViewData[i].setRowFactory(new Callback<TableView<SXValue>, TableRow<SXValue>>() {
                 @Override
                 public TableRow<SXValue> call(TableView<SXValue> tableView) {
                     final TableRow<SXValue> row = new TableRow<SXValue>() {
@@ -517,12 +539,14 @@ public class SX4Monitor extends Application {
 
             chanCol.setCellValueFactory(new PropertyValueFactory<>("channel"));
             dataCol.setCellValueFactory(new PropertyValueFactory<>("data"));
-            bitsCol.setCellValueFactory(new PropertyValueFactory<>("bits"));
+
         }
 
-        tableViewLBData[0].setItems(new SortedList<>(col1Data.sorted()));
-        tableViewLBData[1].setItems(new SortedList<>(col2Data.sorted()));
-        tableViewLBData[2].setItems(new SortedList<>(col3Data.sorted()));
+        tableViewData[0].setItems(new SortedList<>(col0Data.sorted()));
+        tableViewData[1].setItems(new SortedList<>(col1Data.sorted()));
+        tableViewData[2].setItems(new SortedList<>(col2Data.sorted()));
+        tableViewData[3].setItems(new SortedList<>(col3Data.sorted()));
+        tableViewData[4].setItems(new SortedList<>(col4Data.sorted()));
 
     }
 
@@ -561,15 +585,15 @@ public class SX4Monitor extends Application {
 
     }
 
-    private void openServer(Preferences prefs) {
+    private boolean openServer(Preferences prefs) {
         if (prefs.getBoolean("localServer", true)) {
-            openLocalServer();
+            return openLocalServer();
         } else {
-            openRemoteServer(prefs);
+            return openRemoteServer(prefs);
         }
     }
 
-    private void openLocalServer() {
+    private boolean openLocalServer() {
         List<InetAddress> ips = NIC.getmyip();
         if (!ips.isEmpty()) {
             InetAddress ip = ips.get(0);
@@ -580,15 +604,17 @@ public class SX4Monitor extends Application {
                 Thread.sleep(100);
                 client = new SXnetClientThread(ip);
                 client.start();
+                return true;
             } catch (InterruptedException ex) {
                 System.out.println("kann Client nicht starten");
             }
         } else {
             System.out.println("ERROR: kein Netzwerk, kann Client nicht starten");
         }
+        return false;
     }
 
-    private void openRemoteServer(Preferences prefs) {
+    private boolean openRemoteServer(Preferences prefs) {
         String serverName = prefs.get("server", DEFAULT_SERVER);
         InetAddress ip = null;
         try {
@@ -601,12 +627,13 @@ public class SX4Monitor extends Application {
         }
         try {
             Thread.sleep(100);
-
             client = new SXnetClientThread(ip);
             client.start();
+            return true;
         } catch (InterruptedException ex) {
             System.out.println("kann Client nicht starten");
         }
+        return false;
     }
 
     private String getDefaultHostAddress(Preferences prefs) {

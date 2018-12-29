@@ -16,7 +16,6 @@
  */
 package de.blankedv.sx4monitorfx;
 
-import static de.blankedv.sx4monitorfx.SX4Monitor.NEW_TIME_SEC;
 import java.util.Comparator;
 
 
@@ -27,8 +26,6 @@ import java.util.Comparator;
 public class SXValue implements Comparator<SXValue>, Comparable<SXValue> {
     int channel;
     int data;
-
-  
     String bits;
     long tStamp;
     boolean marked;
