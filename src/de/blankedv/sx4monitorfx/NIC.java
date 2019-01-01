@@ -4,6 +4,15 @@ import java.net.*;
 import java.util.*;
 
 class NIC {
+    
+    public static InetAddress getFirstIp() {
+        List<InetAddress> addrList = getmyip();
+        if (addrList != null) {
+            return addrList.get(0);
+        } else {
+            return null;
+        }
+    }
 
     /** 
      * get the ipv4(s) of this machine

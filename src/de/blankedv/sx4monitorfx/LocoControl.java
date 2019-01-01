@@ -182,7 +182,7 @@ public class LocoControl extends Control implements MouseWheelListener {
 
         // create window (Stage)
         Stage stage = new Stage();
-        stage.setTitle("Loco");
+        stage.setTitle("Lok");
         stage.setScene(scene);
         stage.setX(300 + myInstance * 10);
         stage.setY(400 + myInstance * 10);

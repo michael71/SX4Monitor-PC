@@ -5,8 +5,6 @@
  */
 package de.blankedv.sx4monitorfx;
 
-import com.sun.deploy.uitoolkit.impl.fx.HostServicesFactory;
-import com.sun.javafx.application.HostServicesDelegate;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.beans.value.ObservableValue;
@@ -32,8 +30,6 @@ import java.net.UnknownHostException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Optional;
-import java.util.logging.Level;
-import java.util.logging.Logger;
 import java.util.prefs.Preferences;
 import javafx.animation.KeyFrame;
 import javafx.animation.Timeline;
@@ -41,12 +37,7 @@ import javafx.beans.property.BooleanProperty;
 import javafx.beans.property.SimpleBooleanProperty;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
-import javafx.event.EventHandler;
-import javafx.scene.control.Alert;
-import javafx.scene.control.Alert.AlertType;
 import javafx.scene.control.Button;
-import javafx.scene.control.ButtonType;
-import javafx.scene.control.CheckMenuItem;
 import javafx.scene.control.ChoiceDialog;
 import javafx.scene.control.Menu;
 import javafx.scene.control.MenuBar;
@@ -55,12 +46,10 @@ import javafx.scene.control.RadioMenuItem;
 import javafx.scene.control.SeparatorMenuItem;
 import javafx.scene.control.TableRow;
 import javafx.scene.control.TextInputDialog;
-import javafx.scene.control.ToggleGroup;
 import javafx.scene.image.Image;
 import javafx.scene.image.ImageView;
 import javafx.scene.input.MouseEvent;
 import javafx.scene.layout.VBox;
-import javafx.stage.Window;
 import javafx.util.Callback;
 import javafx.util.Duration;
 
@@ -86,19 +75,24 @@ public class SX4Monitor extends Application {
     private static final ArrayList<AccessoryControl> allAccessoryControls = new ArrayList<>();
     private static int currentAccessoryControlID = 0;
 
-    private static final ObservableList<SXValue> col0Data = FXCollections.observableArrayList();
-    private static final ObservableList<SXValue> col1Data = FXCollections.observableArrayList();
-    private static final ObservableList<SXValue> col2Data = FXCollections.observableArrayList();
-    private static final ObservableList<SXValue> col3Data = FXCollections.observableArrayList();
-    private static final ObservableList<SXValue> col4Data = FXCollections.observableArrayList();
+    private static final ObservableList<SXValue> col0Data = FXCollections.observableArrayList();    // SX Data
+    private static final ObservableList<SXValue> col1Data = FXCollections.observableArrayList();    // SX Data
+    private static final ObservableList<SXValue> col2Data = FXCollections.observableArrayList();    // SX Data
+    private static final ObservableList<SXValue> col3Data = FXCollections.observableArrayList();    // virtual Data
+    private static final ObservableList<SXValue> col4Data = FXCollections.observableArrayList();    // virtual Data
+
     private static final List<Integer> channelsOfInterest = Collections.synchronizedList(new ArrayList<>());
 
     private final TableView[] tableViewData = {new TableView(), new TableView(), new TableView(), new TableView(), new TableView()};
+    
+    private final static int MAX_ROWS_PER_COLUMN = 12;  // reshuffle data between columns if more than this number of rows in one column
+    private static int limit0 = 80, limit1 = 90, limit3 = 2000;   // initial limits for data-TO-column# mapping
+    private static long lastRecalcColumns = System.currentTimeMillis();
 
     private MenuItem settingsItem;
 
-    final String version = "v0.33 - 28 Dec 2018";
-    final String DEFAULT_SERVER = "192.168.178.xx";
+    final String version = "v0.34 - 01 Jan 2019";
+    private final String localServer = getLocalServer();
 
     @Override
     public void start(Stage theStage) throws InterruptedException {
@@ -138,20 +132,10 @@ public class SX4Monitor extends Application {
         createButtons(buttonsPane);
         buttonsPane.setPadding(new Insets(3, 3, 3, 3));
 
-        createSXDataTables();
+        createDataTables();
         bp.setTop(vboxTop);
 
         HBox hbCenter = new HBox(3);
-        /*HBox.setHgrow(tableViewSXData[0], Priority.ALWAYS);
-        HBox.setHgrow(tableViewSXData[1], Priority.ALWAYS);
-        HBox.setHgrow(tableViewSXData[2], Priority.ALWAYS);
-        HBox.setHgrow(tableViewLanbahnData[0], Priority.ALWAYS);
-        HBox.setHgrow(tableViewLanbahnData[1], Priority.ALWAYS);
-        tableViewSXData[0].setPrefWidth(100000 * 25);
-        tableViewSXData[1].setPrefWidth(100000 * 25);
-        tableViewSXData[2].setPrefWidth(100000 * 25);
-        tableViewLanbahnData[0].setPrefWidth(100000 * 20);
-        tableViewLanbahnData[1].setPrefWidth(100000 * 20); */
         hbCenter.getChildren().addAll(tableViewData[0], tableViewData[1], tableViewData[2]);
         Scene theScene;
         if (prefs.getBoolean("virtualData", false)) {
@@ -178,6 +162,7 @@ public class SX4Monitor extends Application {
         theStage.show();
 
         boolean result = openServer(prefs);
+        
         if (!result) {
             Dialogs.ErrorExit("Fehler: Keine Verbindung zu SX4 möglich!", "Netzwerk überprüfen!");
         }
@@ -199,10 +184,13 @@ public class SX4Monitor extends Application {
             doOldDataCheck(col0Data);
             doOldDataCheck(col1Data);
             doOldDataCheck(col2Data);
-            if (prefs.getBoolean("virtualData", false)) {
-                doOldDataCheck(col3Data);
-                doOldDataCheck(col4Data);
+            doOldDataCheck(col3Data);
+            doOldDataCheck(col4Data);
+
+            if (prefs.getBoolean("autoColumn", false)) {
+                recalcColumns();
             }
+            
         }));
 
         twoSeconds.setCycleCount(Timeline.INDEFINITE);
@@ -217,13 +205,15 @@ public class SX4Monitor extends Application {
         launch(args);
     }
 
+    /** unmark "old" values
+     * 
+     * @param colD 
+     */
     public void doOldDataCheck(ObservableList<SXValue> colD) {
         ArrayList<SXValue> sxvOld = new ArrayList<>();
         for (SXValue sxv : colD) {
-            if (sxv.isMarked()) {
-                if ((System.currentTimeMillis() - sxv.gettStamp()) > 5000) {
-                    sxvOld.add(sxv);
-                }
+            if (sxv.isMarked() && sxv.isOld()) {
+                sxvOld.add(sxv);
             }
         }
         //System.out.println("sxvOld.size()=" + sxvOld.size());
@@ -258,7 +248,7 @@ public class SX4Monitor extends Application {
 
     // new data received from SXnetClientThread
     public static void update(int addr, int data) {
-        if (addr <= LBMIN) {
+        if (addr <= SXMAX) {
             sxData[addr] = data;  // update the sxData
             //System.out.println("update "+addr+" "+data);
             // update all controls
@@ -320,80 +310,173 @@ public class SX4Monitor extends Application {
     }
 
     private static ObservableList<SXValue> getSXDataList(int addr) {
-        if (addr < 80) {
+
+        if (addr < limit0) {
             return col0Data;
-        } else if ((addr >= 80) && (addr <= 90)) {
+        } else if ((addr >= limit0) && (addr <= limit1)) {
             return col1Data;
-        } else if ((addr > 90) && (addr <= SXMAX)) {
+        } else if ((addr > limit1) && (addr <= SXMAX)) {
             return col2Data;
-        } else if ((addr >= LBMIN) && (addr < 2000)) {
+        } else if ((addr >= LBMIN) && (addr < limit3)) {
             return col3Data;
         } else {
             return col4Data;  // put all other addresses into last col
         }
     }
 
+    /** move data from one column to the next or back, if size if higher than MAX_PER_COLUMN and different between them
+     * 
+     */
+    private static void recalcColumns() {
+        // SX columns
+        if ((col0Data.size() > MAX_ROWS_PER_COLUMN) || (col1Data.size() > MAX_ROWS_PER_COLUMN) || (col2Data.size() > MAX_ROWS_PER_COLUMN)) {
+            // SX-Data columns must be reshuffled
+            int size = col0Data.size() + col1Data.size() + col2Data.size();
+            int nPerCol = (size / 3) + 1;
+            if ((col0Data.size() > nPerCol) || (col1Data.size() > nPerCol) || (col2Data.size() > nPerCol)) {
+                int m = col0Data.size();
+                int i = 0;
+                if (col1Data.size() > m) {
+                    m = col1Data.size();
+                    i = 1;
+                }
+                if (col2Data.size() > m) {
+                    m = col2Data.size();
+                    i = 2;
+                }
+                SXValue mx;
+                switch (i) {
+                    case 0:  // move one value to the right
+                        mx = getMax(col0Data);
+                        if (mx != null) {
+                            col0Data.remove(mx);
+                            col1Data.add(mx);
+                            limit0 = mx.getChannel();
+                            System.out.println("0 -> 1");                           
+                        }
+                        break;
+                    case 2:  // move one value to the left
+                        mx = getMax(col2Data);
+                        if (mx != null) {
+                            col2Data.remove(mx);
+                            col1Data.add(mx);
+                            limit1 = mx.getChannel() + 1;
+                            System.out.println("2 -> 1");
+                        }
+                        break;
+                    case 1:
+                        // move to right or left ??
+                        if (col0Data.size() > col2Data.size()) {
+                            // move to right
+                            mx = getMax(col1Data);
+                            if (mx != null) {
+                                col1Data.remove(mx);
+                                col2Data.add(mx);
+                                limit1 = mx.getChannel();
+                                System.out.println("1 -> 2");
+                            }
+                        } else {
+                            // move to left
+                            mx = getMin(col1Data);
+                            if (mx != null) {
+                                col1Data.remove(mx);
+                                col0Data.add(mx);
+                                limit0 = mx.getChannel()+1;
+                                System.out.println("1 -> 0");
+                            }
+                        }
+                        break;
+                }
+            }
+           
+            //System.out.println("limit0=" + limit0 + " limit1=" + limit1);
+        }
+        // lanbahn (=virtual) columns
+        if ((col3Data.size() > MAX_ROWS_PER_COLUMN) || (col4Data.size() > MAX_ROWS_PER_COLUMN)) {
+            // SX-Data columns must be reshuffled
+            int size = col3Data.size() + col4Data.size();
+            int nPerCol = (size / 2) + 1;
+            if ((col3Data.size() > nPerCol) || (col4Data.size() > nPerCol) ) {
+                int m = col3Data.size();
+                int i = 3;
+                if (col4Data.size() > m) {
+                    m = col4Data.size();
+                    i = 4;
+                }
+ 
+                SXValue mx;
+                switch (i) {
+                    case 3:  // move one value to the right
+                        mx = getMax(col3Data);
+                        if (mx != null) {
+                            col3Data.remove(mx);
+                            col4Data.add(mx);
+                            limit3 = mx.getChannel();
+                            System.out.println("3 -> 4");                           
+                        }
+                        break;
+                    case 4:  // move one value to the left
+                        mx = getMax(col4Data);
+                        if (mx != null) {
+                            col4Data.remove(mx);
+                            col3Data.add(mx);
+                            limit3 = mx.getChannel() + 1;
+                            System.out.println("4 -> 3");
+                        }
+                        break;
+                 }
+            }       
+            //System.out.println("limit3=" + limit3);
+        }
+
+    }
+
+    private static SXValue getMax(ObservableList<SXValue> cd) {
+        int aMax = 0;
+        SXValue maxVal = null;
+
+        for (SXValue s : cd) {
+            if (s.getChannel() > aMax) {
+                aMax = s.getChannel();
+                maxVal = s;
+            }
+        }
+        return maxVal;
+    }
+    
+    private static SXValue getMin(ObservableList<SXValue> cd) {
+        int aMin = 100000;
+        SXValue minVal = null;
+
+        for (SXValue s : cd) {
+            if (s.getChannel() < aMin) {
+                aMin = s.getChannel();
+                minVal = s;
+            }
+        }
+        return minVal;
+    }
+
     private void createMenu(Preferences prefs, MenuBar menuBar) {
         // final ImageView ivSettings = new ImageView(new Image("/de/blankedv/sx4monitorfx/res/settings.png"));
         final ImageView ivInfo = new ImageView(new Image("/de/blankedv/sx4monitorfx/res/info.png"));
         final Menu menu1 = new Menu("File");
-        final Menu menuOptions = new Menu("Options");
-        final Menu menuInfo = new Menu("Help");
-        final MenuItem exitItem = new MenuItem("Exit");
+        final Menu menuOptions = new Menu("Optionen");
+        final Menu menuInfo = new Menu("Hilfe");
+        final MenuItem exitItem = new MenuItem("Prog.Ende/Exit");
         menu1.getItems().add(exitItem);
         exitItem.setOnAction((event) -> {
             System.exit(0);
         });
-        hostAddress = prefs.get("server", DEFAULT_SERVER);
-        settingsItem = new MenuItem(hostAddress);
+        hostAddress = prefs.get("server", localServer);
+        settingsItem = new MenuItem("Server: " + hostAddress);
 
         //settingsItem.setGraphic(ivSettings);
         settingsItem.setOnAction((event) -> {
-            selectServerIP(prefs, hostAddress);
-        });
-        RadioMenuItem localServer = new RadioMenuItem("Local Server");
-        RadioMenuItem remoteServer = new RadioMenuItem("Remote Server");
-        ToggleGroup group = new ToggleGroup();
-        localServer.setToggleGroup(group);
-        remoteServer.setToggleGroup(group);
-        if (prefs.getBoolean("localServer", true)) {
-            localServer.setSelected(true);
-            remoteServer.setSelected(false);
-            settingsItem.setDisable(true);
-        } else {
-            localServer.setSelected(false);
-            remoteServer.setSelected(true);
-            settingsItem.setDisable(false);
-        }
-        localServer.setOnAction(e
-                -> {
-            if (localServer.isSelected()) {
-                System.out.println("ls: local server");
-                prefs.putBoolean("localServer", true);
-                settingsItem.setDisable(true);
-                openLocalServer();
-            } else {
-                System.out.println("ls: remote server");
-                prefs.putBoolean("localServer", false);
-                settingsItem.setDisable(false);
-            }
-        }
-        );
-        remoteServer.setOnAction(e
-                -> {
-            if (remoteServer.isSelected()) {
-                System.out.println("rs: remote server");
-                settingsItem.setDisable(false);
-                prefs.putBoolean("localServer", false);
-                openRemoteServer(prefs);
-            } else {
-                System.out.println("rs: local server");
-                prefs.putBoolean("localServer", true);
-                settingsItem.setDisable(true);
-            }
+            selectServerIP(prefs);
         });
 
-        RadioMenuItem virtData = new RadioMenuItem("Disp virtual Data");
+        RadioMenuItem virtData = new RadioMenuItem("Virt. Daten anzeigen");
         virtData.setSelected(prefs.getBoolean("virtualData", false));
 
         virtData.setOnAction(e
@@ -406,15 +489,29 @@ public class SX4Monitor extends Application {
                 prefs.putBoolean("virtualData", false);
             }
         });
+        
+        RadioMenuItem autoColumn = new RadioMenuItem("Spaltenbereiche automatisch");
+        autoColumn.setSelected(prefs.getBoolean("autoColumn", false));
+        
+        autoColumn.setOnAction(e
+                -> {
+            if (autoColumn.isSelected()) {
+                System.out.println("autoColumn ON");
+                prefs.putBoolean("autoColumn", true);
+            } else {
+                System.out.println("autoColumn OFF");
+                prefs.putBoolean("autoColumn", false);
+            }
+        });
 
-        menuOptions.getItems().addAll(localServer, remoteServer, settingsItem, new SeparatorMenuItem(), virtData);
+        menuOptions.getItems().addAll(settingsItem, new SeparatorMenuItem(), virtData, new SeparatorMenuItem(), autoColumn);
 
         final MenuItem infoItem = new MenuItem("Info");
         menuInfo.getItems().add(infoItem);
         infoItem.setGraphic(ivInfo);
         infoItem.setOnAction((event) -> {
             System.out.println("info clicked");
-            Dialogs.InfoAlert("Info", "SX4Monitor\nhttps://opensx.net/sx4 ", "Programm version:" + version, this);
+            Dialogs.InfoAlert("Info", "SX4Monitor\nhttps://opensx.net/sx4 ", "Programm Version:" + version, this);
         });
 
         menuBar.getMenus().addAll(menu1, menuOptions, menuInfo);
@@ -484,7 +581,7 @@ public class SX4Monitor extends Application {
             allAccessoryControls.add(ac);
         });
 
-        Button btnLoco = new Button("+Loco");
+        Button btnLoco = new Button("+Lok");
         btnLoco.setOnAction((ActionEvent event) -> {
             currentLocoControlID++;
             LocoControl lc = new LocoControl(currentLocoControlID);
@@ -496,7 +593,7 @@ public class SX4Monitor extends Application {
 
     }
 
-    private void createSXDataTables() {
+    private void createDataTables() {
         for (int i = 0; i < 5; i++) {
             TableColumn<SXValue, String> chanCol = new TableColumn<>("ADR");
             TableColumn<SXValue, String> dataCol = new TableColumn<>("D");
@@ -530,6 +627,8 @@ public class SX4Monitor extends Application {
                                 } else {
                                     setStyle("");
                                 }
+                            } else {
+                                setStyle("");
                             }
                         }
                     };
@@ -550,8 +649,9 @@ public class SX4Monitor extends Application {
 
     }
 
-    private void selectServerIP(Preferences prefs, String name) {
+    private void selectServerIP(Preferences prefs) {
 
+        String name = prefs.get("server", localServer);
         TextInputDialog dialog = new TextInputDialog(name);
 
         dialog.setTitle("remote server IP");
@@ -574,7 +674,7 @@ public class SX4Monitor extends Application {
                 } catch (InterruptedException ex) {
                     System.out.println("kann Client nicht starten");
                 }
-                settingsItem = new MenuItem(hostname);
+                settingsItem.setText("Server: " + hostname);
 
             } catch (UnknownHostException ex) {
                 System.out.println("ungültiger Host");
@@ -586,17 +686,11 @@ public class SX4Monitor extends Application {
     }
 
     private boolean openServer(Preferences prefs) {
-        if (prefs.getBoolean("localServer", true)) {
-            return openLocalServer();
-        } else {
-            return openRemoteServer(prefs);
-        }
-    }
 
-    private boolean openLocalServer() {
-        List<InetAddress> ips = NIC.getmyip();
-        if (!ips.isEmpty()) {
-            InetAddress ip = ips.get(0);
+        String serverName = prefs.get("server", localServer);
+
+        try {
+            InetAddress ip = InetAddress.getByName(serverName);
             if (client != null) {
                 client.shutdown();
             }
@@ -604,46 +698,27 @@ public class SX4Monitor extends Application {
                 Thread.sleep(100);
                 client = new SXnetClientThread(ip);
                 client.start();
+                prefs.put("server", serverName);
                 return true;
             } catch (InterruptedException ex) {
                 System.out.println("kann Client nicht starten");
             }
-        } else {
-            System.out.println("ERROR: kein Netzwerk, kann Client nicht starten");
-        }
-        return false;
-    }
-
-    private boolean openRemoteServer(Preferences prefs) {
-        String serverName = prefs.get("server", DEFAULT_SERVER);
-        InetAddress ip = null;
-        try {
-            ip = InetAddress.getByName(serverName);
         } catch (UnknownHostException ex) {
             System.out.println("ERROR: unknownHost, kann Client nicht starten");
         }
-        if (client != null) {
-            client.shutdown();
-        }
-        try {
-            Thread.sleep(100);
-            client = new SXnetClientThread(ip);
-            client.start();
-            return true;
-        } catch (InterruptedException ex) {
-            System.out.println("kann Client nicht starten");
-        }
+
         return false;
     }
 
-    private String getDefaultHostAddress(Preferences prefs) {
-        List<InetAddress> ips = NIC.getmyip();
-        String host = "";
-        if (ips.isEmpty()) {
-            host = prefs.get("server", DEFAULT_SERVER);
-        } else {
-            host = ips.get(0).getHostAddress();
-        }
-        return host;
+    private String getLocalServer() {
+        InetAddress hostAddr = NIC.getFirstIp();
+
+        if (hostAddr == null) {
+            System.out.println("kein Netzwerk");
+            return "?";
+        }  // no network
+
+        return hostAddr.getHostAddress();
     }
+
 }

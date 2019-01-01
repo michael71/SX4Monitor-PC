@@ -99,6 +99,10 @@ public class SXValue implements Comparator<SXValue>, Comparable<SXValue> {
         this.tStamp = tStamp;
     }
     
+    public boolean isOld() {
+        return ((System.currentTimeMillis() - tStamp) >= 4000);
+    }
+    
     @Override
     public int compare(SXValue o1, SXValue o2) {
             if (o1.getChannel() < o2.getChannel()) {
