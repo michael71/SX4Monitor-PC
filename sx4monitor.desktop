@@ -1,0 +1,9 @@
+[Desktop Entry]
+Name=SX4-Monitor
+Comment=SX4-Monitor
+Keywords=java;SX4;monitor
+Exec=/home/mblank/NetBeansProjects/SX4Monitor-PC/start.sh
+Terminal=false
+Type=Application
+Icon=/home/mblank/.local/share/icons/sx4monitor_ico64_3.png
+Categories=Game;
