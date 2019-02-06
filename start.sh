@@ -1,1 +1,2 @@
-java -jar  out/articfacts/SX4Monitor_jar/SX4Monitor.jar
+cd /home/mblank/NetBeansProjects/SX4Monitor-PC 
+/usr/bin/java -jar dist/SX4Monitor-PC.jar 

@@ -98,6 +98,7 @@ public class SX4Monitor extends Application {
     public void start(Stage theStage) throws InterruptedException {
 
         theStage.setTitle("SX4 Monitor");
+        theStage.getIcons().add(new Image("/de/blankedv/sx4monitorfx/res/sx4monitor_ico64_3.png"));
 
         final Parameters params = getParameters();
         final List<String> parameters = params.getRaw();
