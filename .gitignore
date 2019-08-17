@@ -1,21 +1,7 @@
-# NetBeans specific #
-nbproject/private/
-dist/run*
-build/
-nbbuild/
-nbdist/
-nbactions.xml
-nb-configuration.xml
 manifest.mf
 paneldesc.xml
-build.xml
-.project
-manifest.mf
-paneldesc.xml
-build.xml
-.project
-.classpath
-nbproject
+.idea
+out
 
 archiv/
 *.backup
